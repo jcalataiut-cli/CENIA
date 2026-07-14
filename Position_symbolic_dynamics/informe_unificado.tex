@@ -1,0 +1,1191 @@
+% =============================================================================
+% INFORME UNIFICADO: Positional vs Symbolic Attention Heads
+% Artículo + Código + Interpretación
+% =============================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ---- Paquetes ----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage{geometry}
+\geometry{margin=1in, top=1.2in, bottom=1.2in}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    citecolor=blue!60!black,
+    urlcolor=blue!60!black,
+}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{setspace}
+
+% ---- Estilo de página ----
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Informe: Positional vs Symbolic Attention Heads}}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---- Estilo de títulos ----
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\raggedright}
+  {\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{30pt}{20pt}
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries\raggedright}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\raggedright}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries\raggedright}{\thesubsubsection}{1em}{}
+
+% ---- Teoremas y definiciones ----
+\newtheorem{theorem}{Teorema}[chapter]
+\newtheorem{definition}{Definición}[chapter]
+\newtheorem{remark}{Observación}[chapter]
+\newtheorem{example}{Ejemplo}[chapter]
+
+% ---- Listings (código) ----
+\lstset{
+    language=Python,
+    basicstyle=\footnotesize\ttfamily,
+    keywordstyle=\bfseries\color{blue!70!black},
+    commentstyle=\color{green!40!black},
+    stringstyle=\color{red!60!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=5pt,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=4,
+    extendedchars=true,
+    inputencoding=utf8,
+    literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+             {ñ}{{\~n}}1 {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1
+             {Ú}{{\'U}}1 {Ñ}{{\~N}}1 {ü}{{\"u}}1 {Ü}{{\"U}}1,
+}
+
+% ---- Espaciado ----
+\setstretch{1.15}
+\setlength{\parskip}{6pt}
+\setlist{noitemsep, topsep=4pt}
+
+% ---- Documento ----
+\begin{document}
+
+% =============================================================================
+% PORTADA
+% =============================================================================
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+
+{\LARGE\bfseries Positional versus Symbolic\\[6pt]
+Attention Heads}\\[12pt]
+
+{\Large Informe Completo del Artículo y su Implementación}\\[8pt]
+
+{\large\textit{Learning Dynamics, RoPE Geometry, and Length Generalization}}\\[24pt]
+
+\rule{0.6\textwidth}{0.5pt}\\[18pt]
+
+{\large\textbf{Basado en:}}\\[4pt]
+{\large Urrutia, Alegría, Sanchez Macias, Salas, Calderon, Rojas (2026)}\\[6pt]
+{\large arXiv: 2605.31558 \;$\vert$\; NeurIPS 2026}\\[6pt]
+{\large CENIA \& Faculty of Mathematics UC, Santiago, Chile}\\[30pt]
+
+\rule{0.6\textwidth}{0.5pt}\\[18pt]
+
+{\large\textbf{Informe elaborado por:}}\\[4pt]
+{\large Jose Calataiut}\\[6pt]
+{\large Julio 2026}\\[40pt]
+
+\vfill
+{\small Este informe combina el análisis del artículo original con una guía detallada de su implementación, \\
+añadiendo interpretación propia para hacer accesibles los conceptos a cualquier lector.}
+\end{titlepage}
+
+% =============================================================================
+% ÍNDICE
+% =============================================================================
+\tableofcontents
+\newpage
+
+% =============================================================================
+% RESUMEN EJECUTIVO
+% =============================================================================
+\chapter*{Resumen Ejecutivo}
+\addcontentsline{toc}{chapter}{Resumen Ejecutivo}
+
+¿Cómo aprenden los transformers a prestar atención? Esta pregunta, que parece simple, esconde una distinción fundamental que este artículo ilumina de manera brillante: los \textbf{attention heads} (cabezas de atención) de un transformer pueden comportarse de dos formas radicalmente distintas:
+
+\begin{itemize}
+    \item \textbf{Comportamiento posicional:} el head atiende a una \emph{posición} específica de la secuencia, sin importar qué token esté ahí.
+    \item \textbf{Comportamiento simbólico:} el head atiende a un \emph{token} específico, sin importar dónde esté.
+\end{itemize}
+
+Para estudiar esta distinción, los autores diseñan dos tareas sintéticas que son \textbf{estructuralmente equivalentes} (ambas requieren seguir una cadena multi-hop) pero que exigen perfiles de atención opuestos: una requiere heads posicionales, la otra heads simbólicos.
+
+\vspace{6pt}
+\textbf{Resultados clave del artículo:}
+\begin{itemize}
+    \item Los heads desarrollan progresivamente comportamientos \textbf{puros} (claramente posicionales o simbólicos) durante el entrenamiento, y esta pureza es necesaria para alcanzar máxima precisión.
+    \item Se identifican tres funciones mecanísticas básicas: \textbf{Index} (posicional), \textbf{Retrieval} (simbólico) y \textbf{Reflexive} (copia).
+    \item Se demuestra teóricamente que los mecanismos simbólicos generalizan \textbf{mucho mejor} a secuencias largas que los posicionales: la discrepancia decae como $O(1/n^2)$ para Index, mientras que para Retrieval se mantiene no nula incluso para $n$ grandes.
+    \item Modelos frontera (GPT 5.4, GPT 5.5, Claude Sonnet 3.7) confirman esta asimetría: obtienen $>88\%$ en la tarea simbólica frente a $<50\%$ en la tarea posicional a longitud 32.
+\end{itemize}
+
+\vspace{6pt}
+\textbf{Nuestra interpretación:} Este artículo es importante no solo por sus resultados concretos, sino porque proporciona un \textbf{marco conceptual} para entender cómo los transformers procesan información. La distinción posicional/simbólico nos da un lenguaje para hablar de mecanismos internos que antes solo podíamos intuir. Además, sugiere una dirección práctica para mejorar la generalización: entrenar modelos para que desarrollen estrategias simbólicas siempre que sea posible.
+
+\vspace{6pt}
+Este informe unificado cubre tanto el contenido del artículo como los detalles de su implementación, añadiendo interpretación propia en cada sección para que cualquier lector, incluso sin formación previa en transformers, pueda comprender los conceptos y su relevancia.
+
+\newpage
+
+% =============================================================================
+% CAPÍTULO 1: INTRODUCCIÓN Y CONTEXTO
+% =============================================================================
+\chapter{Introducción y Contexto}
+
+\section{El problema de la atención en transformers}
+
+Los transformers se han convertido en la arquitectura dominante para el procesamiento del lenguaje natural y, cada vez más, para otras modalidades. En el corazón de esta arquitectura está el \textbf{mecanismo de atención}, que permite que cada token ``mire'' a otros tokens de la secuencia para decidir qué información incorporar a su representación.
+
+Pero, ¿cómo decide un attention head \emph{a quién} mirar? La respuesta parece depender de dos tipos de información:
+
+\begin{enumerate}
+    \item \textbf{Información posicional:} ``mira al token que está 3 posiciones a la izquierda''.
+    \item \textbf{Información simbólica:} ``mira al token que contiene la letra 'a'''.
+\end{enumerate}
+
+La mayoría de los transformers modernos — incluyendo GPT, Claude y Llama — usan \textbf{Rotary Positional Encoding (RoPE)} para codificar la información posicional. RoPE tiene una propiedad notable: permite que los attention heads decidan \emph{por sí mismos} si quieren usar información posicional, simbólica, o ambas. Esto es diferente de enfoques anteriores como las embeddings posicionales absolutas, donde la posición se suma al token, y el head no puede separar fácilmente ambas fuentes de información.
+
+\subsection{¿Por qué importa esta distinción?}
+
+Imaginemos que estamos leyendo un libro. Para entender una frase como ``El gato, que estaba cansado, se durmió'', necesitamos:
+\begin{itemize}
+    \item \textbf{Razonamiento posicional:} ``el token 3 posiciones atrás es el sujeto de la oración principal''.
+    \item \textbf{Razonamiento simbólico:} ``'gato' es el antecedente del pronombre 'que'''.
+\end{itemize}
+
+El primer tipo de razonamiento escala mal: si la secuencia se alarga, la información posicional se diluye. El segundo tipo escala bien: da igual si el antecedente está 5 o 500 tokens atrás, la asociación simbólica sigue siendo la misma.
+
+Esta intuición es la que el artículo formaliza y demuestra rigurosamente.
+
+\section{Trabajo previo}
+
+Urrutia et al. (2025) introdujeron las \textbf{métricas positional y symbolic scores} para clasificar el comportamiento de los attention heads. Encontraron que, en modelos reales, las capas tempranas tienden a ser posicionales y las profundas simbólicas. El artículo que estudiamos aquí extiende ese análisis en dos direcciones:
+
+\begin{itemize}
+    \item \textbf{Dinámica de aprendizaje:} ¿cómo evolucionan estos comportamientos durante el entrenamiento?
+    \item \textbf{Generalización:} ¿cómo afecta el tipo de comportamiento a la capacidad de generalizar a secuencias más largas?
+\end{itemize}
+
+Barbero et al. (2024) observaron que los heads simbólicos tienden a usar frecuencias bajas de RoPE, mientras que los posicionales usan frecuencias altas. Esta observación es consistente con los resultados del artículo y tiene una interpretación geométrica natural que exploraremos en el Capítulo 6.
+
+\section{Nuestra interpretación}
+
+\subsection{¿Por qué este artículo es importante para el TFM?}
+
+Este artículo ejemplifica un enfoque que nos interesa particularmente en nuestro trabajo: \textbf{diseñar tareas sintéticas que aíslen mecanismos específicos}. Al crear dos tareas que son estructuralmente idénticas pero que requieren mecanismos distintos, los autores pueden estudiar cada mecanismo de forma aislada. Esto es análogo a cómo en teoría de procesos gaussianos (NNGP/NTK) diseñamos arquitecturas específicas para aislar el comportamiento del kernel.
+
+\subsection{Una lección sobre generalización}
+
+La moraleja más importante del artículo es que \textbf{el tipo de mecanismo que un modelo aprende determina su capacidad de generalización}. No todos los mecanismos son iguales: los simbólicos son intrínsecamente más robustos. Esto tiene implicaciones profundas para el diseño de arquitecturas: si podemos sesgar el aprendizaje hacia estrategias simbólicas, obtendremos modelos que generalizan mejor.
+
+En el contexto de nuestro TFM, esta idea resuena con la pregunta de cómo la arquitectura de una red neuronal (su kernel NTK asociado) determina qué funciones puede aprender y cómo generaliza. Aquí, la ``arquitectura'' es el mismo transformer, pero el ``kernel efectivo'' depende de si el head aprende un comportamiento posicional o simbólico.
+
+% =============================================================================
+% CAPÍTULO 2: LAS TAREAS PROPUESTAS
+% =============================================================================
+\chapter{Las Tareas Propuestas}
+
+El diseño experimental del artículo es elegante en su simplicidad: dos tareas que son \textbf{estructuralmente equivalentes} pero que requieren \textbf{mecanismos diferentes}. Esto permite aislar los factores posicional y simbólico manteniendo todo lo demás constante.
+
+\section{Number Task (Tarea Numérica)}
+
+\subsection{Descripción intuitiva}
+
+Imaginemos una secuencia como la siguiente:
+
+\[
+\text{C B A} \dots \text{1 4 1 3 2 1 1}
+\]
+
+La secuencia tiene dos partes:
+\begin{itemize}
+    \item Una \textbf{ventana objetivo} de letras (C, B, A, \dots) combinadas con números que indican saltos.
+    \item Una \textbf{ventana de contexto} con números que guían los saltos.
+\end{itemize}
+
+El mecanismo es como seguir instrucciones del tipo: ``el número en la posición actual te dice cuántas posiciones retroceder''. En el ejemplo de 4-hop:
+
+\begin{enumerate}
+    \item El último número es 1: retrocede 1 posición.
+    \item Ahora estás en un 1: retrocede 1 posición.
+    \item Ahora estás en un 3: retrocede 3 posiciones.
+    \item Ahora estás en un 4: retrocede 4 posiciones.
+    \item ¡Has llegado a una letra! Esa es la respuesta.
+\end{enumerate}
+
+\subsection{Definición formal}
+
+\textbf{Vocabulario:} 120 letras (a-z + 94 bigramas aa--dp) + 16 enteros \{1,\dots,16\} = 136 tokens.
+
+\textbf{Estructura de la secuencia:}
+\begin{itemize}
+    \item $n_1 = 8$ tokens en la ventana objetivo (mezcla de letras y números).
+    \item $n_2 = 8$ tokens en la ventana de contexto (solo números).
+    \item Total: 17 tokens (incluyendo el query final).
+\end{itemize}
+
+\textbf{Camino de hops:} Dado un entero $j_{k_i}$ en la posición $k_i$, el siguiente hop se encuentra en la posición $k_{i+1} = k_i - j_{k_i}$.
+
+\section{Letter Task (Tarea de Letras)}
+
+\subsection{Descripción intuitiva}
+
+Ahora la secuencia tiene pares:
+\[
+\text{(I,G) (G,D) (D,E) (E,C) (H,F)} \dots \text{(C,2)}
+\]
+
+Cada par (X,Y) significa: ``encuentra el par anterior cuya \textbf{primera letra} sea Y''. Es como un juego de asociaciones:
+
+\begin{enumerate}
+    \item El último par es (C,2): no es una instrucción de búsqueda (es target).
+    \item El penúltimo par tiene segunda letra C: buscamos el par con primera letra C.
+    \item El par (E,C) tiene primera letra E y segunda C: \textbf{no} es el que buscamos.
+    \item El par (D,E) tiene primera letra D: no es.
+    \item El par (G,D): primera letra G, no es.
+    \item El par (I,G): primera letra I, no es.
+    \item ... espera, no encontramos un par con primera letra C en la ventana de contexto.
+\end{enumerate}
+
+¡Ah! Esto es porque la \textbf{segunda letra} del par es la que buscamos. Revisemos:
+
+\begin{enumerate}
+    \item (C,2) en target: segunda letra es 2 (número), no buscamos más.
+    \item El penúltimo par de contexto es (E,C): segunda letra es C.
+    \item Buscamos un par con \textbf{primera letra} C. ¿Hay alguno? Sí: (C,2) es target, pero también... revisemos la ventana de contexto.
+    \item Espera, la lógica real es: cada par (X,Y) en la ventana de contexto dice ``busca el par anterior que empiece con Y''.
+\end{enumerate}
+
+En realidad, el mecanismo es más simple de lo que parece: en la ventana de contexto, cada par (X,Y) tiene segunda letra Y. Buscamos hacia atrás un par que empiece con esa Y. Cuando encontramos el par (Z,Y) que empieza con Y, ese es el que ``responde'' al query. La segunda letra de ese par se convierte en la nueva letra a buscar.
+
+\subsection{Definición formal}
+
+\textbf{Vocabulario:} 8 letras \{a,\dots,h\} + 8 enteros \{1,\dots,8\} = 64 pares $\times$ 2 tipos = 128 tokens.
+
+\textbf{Estructura:} Misma que Number Task: $n_1 = 8$, $n_2 = 8$, 17 tokens totales.
+
+\textbf{Camino de hops:} Dado un par $(x_{k_i}, y_{k_i})$ en posición $k_i$, buscamos la posición $k_{i+1}$ tal que el par en esa posición tenga primera letra $y_{k_i}$.
+
+\section{Equivalencia estructural}
+
+Es crucial entender por qué los autores dicen que ambas tareas son \textbf{estructuralmente equivalentes}:
+
+\begin{itemize}
+    \item Ambas tienen la misma estructura de secuencia (ventana objetivo + ventana de contexto + query).
+    \item Ambas requieren seguir una cadena de $h$ pasos (hops).
+    \item Ambas tienen la misma longitud de secuencia y distribución de hops.
+\end{itemize}
+
+La \textbf{única} diferencia es el tipo de información que se necesita para seguir la cadena:
+\begin{itemize}
+    \item En Number Task: necesitas seguir \textbf{posiciones} (el número te dice cuánto retroceder).
+    \item En Letter Task: necesitas seguir \textbf{símbolos} (la letra te dice qué buscar).
+\end{itemize}
+
+\section{Nuestra interpretación}
+
+\subsection{Por qué este diseño es brillante}
+
+El diseño de tareas paralelas es una de las contribuciones metodológicas más importantes del artículo. Al mantener todo constante excepto el tipo de razonamiento requerido, los autores pueden \textbf{atribuir causalmente} las diferencias en el comportamiento de los heads al tipo de mecanismo (posicional vs. simbólico).
+
+En nuestro TFM sobre NNGP/NTK, esto es análogo a mantener fija la arquitectura de red mientras variamos la función de activación o la inicialización: podemos aislar el efecto de cada componente en el kernel resultante.
+
+\subsection{La conexión con generalización}
+
+El aspecto más interesante para nosotros es que las dos tareas, siendo equivalentes en complejidad, tienen perfiles de generalización radicalmente distintos. Esto sugiere que la \textbf{forma} en que un modelo resuelve una tarea (su ``estrategia interna'') importa tanto o más que la tarea misma. En términos de NTK, dos redes con la misma función de pérdida pueden tener kernels efectivos muy diferentes si aprenden representaciones internas distintas.
+
+\newpage
+
+% =============================================================================
+% CAPÍTULO 3: CONFIGURACIÓN EXPERIMENTAL
+% =============================================================================
+\chapter{Configuración Experimental}
+
+\section{Arquitectura del modelo}
+
+Los autores utilizan un \textbf{GPT-J decoder-only Transformer} con una modificación clave: \textbf{single-head attention} (una sola cabeza de atención por capa). Esto no es lo habitual — los transformers reales usan múltiples cabezas — pero es intencional:
+
+\begin{itemize}
+    \item Con una sola cabeza, cada capa solo puede implementar \textbf{un} mecanismo.
+    \item Esto hace que el análisis de positional/symbolic scores sea directo: no hay mezcla de comportamientos dentro de una capa.
+    \item La interpretación mecánica es más clara: ``la capa L3 implementa Index'' en lugar de ``la capa L3 contribuye parcialmente a Index a través de uno de sus 8 heads''.
+\end{itemize}
+
+\textbf{Especificaciones:}
+\begin{itemize}
+    \item Capas: 12
+    \item Dimensión oculta: 128
+    \item Dimensión feed-forward: 512 ($4\times d_\text{model}$)
+    \item Dropout: 0.1
+    \item Activación: GELU
+    \item Posicional encoding: RoPE con frecuencia base 10000
+    \item Objetivo: Last-token prediction (solo se optimiza la pérdida en el último token)
+\end{itemize}
+
+\section{Dataset}
+
+Para cada tarea se generan \textbf{480,000 secuencias} con la siguiente distribución:
+\begin{itemize}
+    \item Train: 432,000 (90\%)
+    \item Validation: 2,400 (0.5\%)
+    \item Test: 45,600 (9.5\%)
+\end{itemize}
+
+Cada secuencia tiene 17 tokens: 8 de ventana objetivo, 8 de ventana de contexto, 1 de query. Las secuencias están balanceadas para tener igual proporción de 1-hop, 2-hop, 3-hop y 4-hop.
+
+\section{Entrenamiento}
+
+\textbf{Recursos:} 3 NVIDIA RTX A5000 (24 GB cada una).
+
+\textbf{Tiempo:}
+\begin{itemize}
+    \item Entrenamiento: $\sim$55 minutos por modelo.
+    \item Cálculo de métricas: 10 horas GPU + 17 horas CPU.
+\end{itemize}
+
+La pérdida se calcula solo en el último token (last-token prediction). Esto fuerza al modelo a desarrollar una representación interna que resuelva la tarea completa, no a predecir cada token individualmente.
+
+\section{Nuestra interpretación}
+
+La decisión de usar single-head es instructiva para nuestro TFM. En NNGP/NTK, a menudo consideramos capas completas o neuronas individuales. El single-head actúa como una ``neurona interpretable'' — un componente cuya función podemos aislar y etiquetar. Esto nos recuerda que, para entender un sistema complejo, a veces es necesario simplificarlo, aunque eso signifique sacrificar realismo.
+
+La escala del experimento (480k secuencias, 55 min de entrenamiento) es modesta para los estándares actuales de LLMs, pero suficiente para que emerjan comportamientos claros. Esto valida el uso de modelos pequeños como laboratorios para estudiar fenómenos que ocurren a escala.
+
+% =============================================================================
+% CAPÍTULO 4: MÉTRICAS
+% =============================================================================
+\chapter{Métricas: Positional y Symbolic Scores}
+
+\section{Motivación}
+
+Necesitamos una forma \textbf{cuantitativa} de determinar si un attention head se comporta de manera posicional o simbólica. No basta con inspeccionar visualmente las matrices de atención; necesitamos una métrica que sea:
+\begin{itemize}
+    \item Objetiva (no depende del observador).
+    \item Continua (un head puede ser más o menos posicional/simbólico).
+    \item Invariante (no depende de la tarea específica).
+\end{itemize}
+
+\section{Definición intuitiva}
+
+La idea es simple: si un head es \textbf{posicional}, su distribución de atención debería ser \textbf{invariante} ante permutaciones de los tokens. Es decir, si intercambiamos dos tokens de posición, el head debería seguir atendiendo a las mismas posiciones (porque lo que importa es la posición, no el token).
+
+Si un head es \textbf{simbólico}, su distribución de atención debería ser \textbf{equivariante} ante permutaciones. Es decir, si intercambiamos dos tokens, la atención debería intercambiarse también (porque lo que importa es el token, no la posición).
+
+\subsection{Un ejemplo concreto}
+
+Imaginemos una secuencia $[a, b, c, d]$ y un attention head que atiende al último token:
+\begin{itemize}
+    \item Head posicional: atiende a la posición 2 (índice 2, el tercer token). Si permutamos a $[a, c, b, d]$, el head sigue atendiendo a la posición 2 (ahora el token 'b').
+    \item Head simbólico: atiende al token 'c'. En la secuencia original está en posición 2. Si permutamos a $[a, c, b, d]$, el head atiende a la posición 1 (donde está 'c' ahora).
+\end{itemize}
+
+\section{Definición formal}
+
+Para un par de posiciones $(i, j)$, consideramos la permutación $\pi_{ij}$ que las intercambia:
+
+\begin{definition}[Positional Score]
+El \textbf{positional score} de un head para una entrada dada es:
+\[
+\text{PosScore} = \frac{1}{Z} \sum_{i<j} \alpha(\pi_{ij}) \cdot \cos\bigl(\mathbf{a}, \mathbf{a} \circ \pi_{ij}\bigr)
+\]
+donde $\mathbf{a}$ es la distribución de atención original, $\mathbf{a} \circ \pi_{ij}$ es la atención tras permutar los estados ocultos, $\alpha(\pi_{ij})$ es un peso basado en la masa de atención movida, y $Z$ es una constante de normalización.
+\end{definition}
+
+\begin{definition}[Symbolic Score]
+El \textbf{symbolic score} de un head es:
+\[
+\text{SymScore} = \frac{1}{Z} \sum_{i<j} \alpha(\pi_{ij}) \cdot \cos\bigl(\mathbf{a}, \pi_{ij}(\mathbf{a})\bigr)
+\]
+donde $\pi_{ij}(\mathbf{a})$ es la atención ``canónica'' bajo equivariancia: $\mathbf{a}[i]$ y $\mathbf{a}[j]$ se intercambian.
+\end{definition}
+
+\section{Implementación en código}
+
+El código real del repositorio implementa estas métricas de la siguiente manera:
+
+\begin{lstlisting}
+def compute_positional_score(head_attention, hidden_states):
+    """Mide cuán invariante es la atención ante permutaciones de los keys."""
+    n = len(hidden_states)
+    pos_score = 0.0
+    total_weight = 0.0
+
+    for i in range(n - 1):
+        for j in range(i + 1, n):
+            # Peso basado en la masa de atención movida
+            di, dj = head_attention[i], head_attention[j]
+            alpha = softmax(tensor([di - dj]) / temperature)
+
+            # Permutar estados ocultos
+            hidden_permuted = hidden_states.clone()
+            hidden_permuted[i], hidden_permuted[j] = \
+                hidden_permuted[j], hidden_permuted[i]
+
+            # Re-evaluar atención
+            attention_permuted = reestimate_attention(
+                hidden_permuted, head_attention)
+
+            # Similitud coseno
+            cos_sim = cosine_similarity(
+                (head_attention[i], head_attention[j]),
+                (attention_permuted[i], attention_permuted[j]))
+
+            pos_score += alpha * cos_sim
+            total_weight += alpha
+
+    return pos_score / total_weight
+\end{lstlisting}
+
+\section{Nuestra interpretación}
+
+\subsection{¿Qué miden realmente estos scores?}
+
+El positional score mide cuánto ``le importa'' al head la identidad de los tokens. Si es cercano a 1, el head ignora qué token está en cada posición — solo le importa la posición. Si es cercano a 0, el head cambia drásticamente su atención cuando los tokens se mueven.
+
+El symbolic score mide lo contrario: cuánto ``le importa'' la posición. Si es cercano a 1, el head sigue al token independientemente de dónde esté. Si es cercano a 0, la posición es crítica para decidir a quién atender.
+
+\subsection{Una metáfora visual}
+
+Imaginemos un foco en un escenario:
+\begin{itemize}
+    \item \textbf{Foco posicional:} ilumina siempre la tercera silla, haya quien haya sentado.
+    \item \textbf{Foco simbólico:} ilumina siempre a la persona 'Juan', se siente donde se siente.
+\end{itemize}
+
+El positional score mide qué tan fijo está el foco en la silla; el symbolic score mide qué tan bien sigue a Juan.
+
+\subsection{Conexión con NNGP/NTK}
+
+En el contexto de nuestro TFM, esta distinción recuerda a la diferencia entre kernels que dependen de la geometría del input (análogo a posicional) y kernels que dependen del contenido semántico (análogo a simbólico). El NTK de una red con pesos compartidos (CNN) tiene propiedades de invarianza similares a las que buscamos aquí.
+
+\newpage
+
+% =============================================================================
+% CAPÍTULO 5: RESULTADOS PRINCIPALES
+% =============================================================================
+\chapter{Resultados Principales}
+
+\section{Dinámica de aprendizaje}
+
+\subsection{Number Task: emergencia progresiva}
+
+En la Number Task, el accuracy emerge de forma \textbf{progresiva}: el modelo primero aprende a resolver casos de 1-hop, luego 2-hop, y así sucesivamente. Esto tiene sentido intuitivo: para resolver $h$ hops, el modelo necesita encadenar $h$ operaciones de Index, y cada operación adicional requiere una capa más del transformer.
+
+\begin{itemize}
+    \item Los \textbf{heads posicionales} (Index) aparecen primero, en capas medias (L3--L6).
+    \item Los \textbf{heads simbólicos} (necesarios para propagar información entre hops) aparecen después, en capas profundas (L9--L11).
+    \item El accuracy para 4-hop solo emerge cuando todas las capas necesarias están entrenadas.
+\end{itemize}
+
+\subsection{Letter Task: emergencia simultánea}
+
+En la Letter Task, el accuracy emerge \textbf{simultáneamente} para todos los números de hops. Esto se debe a que el mecanismo de Retrieval es recursivo: una vez que el modelo aprende a hacer un Retrieval, puede hacer tantos como sea necesario, porque cada operación es independiente de las anteriores.
+
+\begin{itemize}
+    \item Solo se requieren \textbf{heads simbólicos} (Retrieval).
+    \item La última capa (L11) es necesaria para todos los hops.
+    \item Los heads posicionales no juegan ningún papel.
+\end{itemize}
+
+\section{Pureza de heads}
+
+Una de las observaciones más interesantes es que los heads se vuelven \textbf{puros} durante el entrenamiento. Un head puro es aquel que es claramente posicional (PosScore $> 0.9$, SymScore $< 0.1$) o claramente simbólico (SymScore $> 0.9$, PosScore $< 0.1$). Los heads mixtos (ambos scores intermedios) son poco comunes y se asocian con baja precisión.
+
+\begin{theorem}[Observación empírica]
+La pureza de los heads es \textbf{necesaria} para alcanzar máxima precisión en ambas tareas.
+\end{theorem}
+
+Esto valida las métricas como herramienta de interpretabilidad: no solo clasifican heads, sino que la clasificación es \textbf{significativa} para el comportamiento del modelo.
+
+\section{Funciones mecanísticas}
+
+Los autores identifican tres funciones básicas que los heads implementan:
+
+\subsection{Selective Index (Posicional)}
+Dada una posición con un número $n$, copia el token $n$ posiciones atrás, pero solo si es una letra. Si el token en esa posición también es un número, no copia nada (o copia un token nulo). Esta selectividad es crucial: evita que el modelo ``se pierda'' siguiendo números en lugar de letras.
+
+\subsection{Retrieval (Simbólico)}
+Dado un par (X,Y), busca el par anterior cuya primera letra sea Y y lo copia. Este mecanismo no usa información posicional en absoluto: solo mira el contenido de los tokens.
+
+\subsection{Reflexive}
+Copia el token actual a la siguiente capa sin cambios. Actúa como un ``bypass'' que preserva información a través de las capas que no participan en el cómputo activo.
+
+\section{Descomposición mecanística}
+
+Para una entrada con $h$ hops y un modelo con $\ell \geq h$ capas, los autores proponen:
+
+\[
+f_{\text{NUM}}(\sigma) = \text{Reflexive}^{\ell-h}(\text{Index}^h(\sigma))[n]
+\]
+\[
+f_{\text{LET}}(\sigma) = \text{Reflexive}^{\ell-h}(\text{Retrieval}^h(\sigma))[n]
+\]
+
+Es decir: las primeras $h$ capas implementan la función activa (Index o Retrieval), y las restantes $\ell-h$ capas solo pasan la información (Reflexive). Esto es una descomposición limpia que explica cómo un transformer de 12 capas puede resolver tareas de hasta 4 hops.
+
+\section{Nuestra interpretación}
+
+\subsection{Emergencia progresiva vs. simultánea}
+
+La diferencia en el patrón de emergencia (progresivo para posicional, simultáneo para simbólico) es uno de los resultados más profundos del artículo. Nos dice que \textbf{los mecanismos posicionales son acumulativos}: cada hop requiere una capa adicional dedicada. En cambio, los mecanismos simbólicos son \textbf{composicionales}: una vez que aprendes la operación básica, puedes aplicarla recursivamente.
+
+Esta distinción tiene implicaciones para el diseño de arquitecturas: si una tarea se puede descomponer en operaciones simbólicas, un modelo profundo pero con capas reutilizables podría resolverla con menos parámetros. Esto recuerda a la diferencia entre redes feed-forward y redes recurrentes: las primeras ``gastan'' una capa por paso de cómputo, mientras que las segundas reutilizan la misma transformación.
+
+\subsection{El significado de la pureza}
+
+La pureza de heads es un resultado que va más allá de la simple clasificación. Sugiere que los transformers tienen una ``preferencia'' por desarrollar comportamientos especializados puros en lugar de comportamientos mixtos. Esto es análogo a cómo las neuronas en el cerebro tienden a especializarse (células de lugar, células de concepto, etc.), y sugiere que la especialización es una estrategia computacionalmente ventajosa.
+
+% =============================================================================
+% CAPÍTULO 6: ANÁLISIS TEÓRICO
+% =============================================================================
+\chapter{Análisis Teórico: Geometría de RoPE y Discrepancia}
+
+El análisis teórico es, para nosotros, la parte más importante del artículo. No solo explica \emph{qué} observan, sino \emph{por qué} ocurre. La clave está en la geometría de RoPE.
+
+\section{Rotary Positional Encoding (RoPE)}
+
+RoPE codifica la posición de un token rotando sus vectores query y key en el plano. Específicamente, para una posición $p$ y una frecuencia $\theta_k$:
+
+\[
+\text{RoPE}(\mathbf{x}, p)_k = 
+\begin{pmatrix}
+\cos(p\theta_k) & -\sin(p\theta_k) \\
+\sin(p\theta_k) & \cos(p\theta_k)
+\end{pmatrix}
+\begin{pmatrix}
+x_{2k} \\
+x_{2k+1}
+\end{pmatrix}
+\]
+
+La propiedad clave es que el logit de atención entre un query en posición $n$ y un key en posición $j$ depende solo de la \textbf{diferencia de posiciones}:
+
+\[
+L(\mathbf{q}_n, \mathbf{k}_j) = (\text{RoPE}(\mathbf{k}_j, j))^\top \text{RoPE}(\mathbf{q}_n, n) = \mathbf{k}_j^\top R^{(n-j)}\mathbf{q}_n
+\]
+
+donde $R^{(n-j)}$ es una matriz de rotación por $(n-j)\theta$.
+
+\section{Teorema 3.1: Factibilidad}
+
+\begin{theorem}
+Existe un Transformer $T_{\text{Index}}$ con atención RoPE 2D que implementa Index, y un $T_{\text{Retrieval}}$ que implementa Retrieval, ambos con una sola cabeza de atención y sin funciones de activación.
+\end{theorem}
+
+\subsection{Mecanismo de Index}
+
+Para Index, la construcción es:
+
+\begin{itemize}
+    \item \textbf{Key vectors:} todos alineados al mismo vector $\mathbf{v}$. Esto significa que, desde la perspectiva de los keys, todos los tokens son indistinguibles posicionalmente.
+    \item \textbf{Query vectors:} para letras, $\mathbf{q} = \mathbf{v}$; para números con valor $\sigma$, $\mathbf{q} = R^{-\sigma}\mathbf{v}$ (rotado $-\sigma$ pasos).
+    \item \textbf{Value vectors:} mapeo diagonal que solo copia si el token es letra ($\alpha > 1$ para letras, 0 para números).
+\end{itemize}
+
+El logit de atención entre un query número en posición $n$ con valor $\sigma$ y un key en posición $j$ es:
+
+\[
+L = \cos((n - j - \sigma)\theta)
+\]
+
+¡El máximo ocurre exactamente en $j = n - \sigma$! Es decir, el head atiende precisamente $\sigma$ posiciones atrás.
+
+\textbf{Interpretación geométrica:} El query vector del número ``apunta'' en la dirección correspondiente a $\sigma$ posiciones atrás. Como todos los keys están alineados, el que esté más cerca en el espacio rotado recibe la máxima atención.
+
+\subsection{Mecanismo de Retrieval}
+
+Para Retrieval:
+
+\begin{itemize}
+    \item \textbf{Key vectors:} codifican la letra izquierda del par mediante rotación con ángulo $\omega = 2\pi/|\text{ALPH}|$.
+    \item \textbf{Query vectors:} codifican la letra derecha del par (para contexto) o la letra izquierda (para target).
+    \item \textbf{Value vectors:} identidad (copian el valor completo).
+\end{itemize}
+
+El logit de atención:
+
+\[
+L = \cos((\phi(L_{\text{key}}) - \phi(R_{\text{query}}))\omega + (n - j)\theta)
+\]
+
+donde $\phi$ mapea letras a índices. El máximo ocurre cuando $\phi(L_{\text{key}}) = \phi(R_{\text{query}})$, es decir, cuando la letra izquierda del key coincide con la letra derecha del query.
+
+\textbf{IMPORTANTE:} El término posicional $(n-j)\theta$ es pequeño si $\theta$ es pequeño. ¡Los heads simbólicos usan frecuencias bajas de RoPE ($\theta$ pequeño) precisamente para minimizar la influencia de la posición!
+
+\section{Remark 3.1: Separación fundamental}
+
+\begin{remark}
+Index \textbf{no puede} implementarse con un head puramente simbólico. Retrieval \textbf{no puede} implementarse con un head puramente posicional.
+\end{remark}
+
+Esta observación, que parece obvia, tiene implicaciones profundas: la tarea determina el tipo de mecanismo que el modelo \textbf{debe} aprender. No hay ``atajos'' — si la tarea requiere seguir posiciones, el modelo desarrollará heads posicionales; si requiere seguir símbolos, desarrollará heads simbólicos.
+
+\section{Discrepancia}
+
+La \textbf{discrepancia} es la herramienta teórica principal para cuantificar la degradación con la longitud.
+
+\begin{definition}[Discrepancia]
+La discrepancia $\Delta$ de un attention head para una entrada de longitud $n$ es la diferencia entre el logit más grande y el segundo más grande:
+\[
+\Delta(n) = \max_i L_i - \text{second-max}_i L_i
+\]
+
+Una discrepancia de 0 significa que el modelo no puede distinguir el token correcto del incorrecto.
+\end{definition}
+
+\begin{theorem}[Cotas de Discrepancia]
+Para Index (posicional):
+\[
+\Delta_{\text{Index}}(n) \leq \min\left\{1 - \cos(\theta), \frac{\pi^2}{2n^2}\right\}
+\]
+
+Para Retrieval (simbólico):
+\[
+\Delta_{\text{Retrieval}}(n) \leq 1 - \cos(\omega - n\theta)
+\]
+donde $\omega = 2\pi/|\text{ALPH}|$ y $\theta$ es el ángulo RoPE.
+\end{theorem}
+
+\subsection{Interpretación de las cotas}
+
+\textbf{Index:} La discrepancia decae como $O(1/n^2)$. Esto significa que, para secuencias largas, la diferencia entre atender a la posición correcta y a una incorrecta se vuelve extremadamente pequeña. Esencialmente, el modelo ``no puede distinguir'' entre posiciones cercanas cuando la secuencia es larga. Esto es consistente con la intuición: para un ángulo pequeño $\theta$, las rotaciones $(n-j)\theta$ para diferentes $j$ producen cosenos muy similares.
+
+\textbf{Retrieval:} La discrepancia se mantiene \textbf{no nula} incluso para $n$ grandes, siempre que $\theta$ sea suficientemente pequeño ($\theta < \omega/2n_0$). Si $\theta = 0$ (NoPE, sin codificación posicional), la discrepancia se mantiene constante:
+
+\[
+\Delta_{\text{Retrieval}}(n) = 1 - \cos(\omega)
+\]
+
+¡Independiente de $n$! Esto demuestra que los mecanismos simbólicos son intrínsecamente robustos a la longitud de la secuencia.
+
+\section{Validación experimental}
+
+Los autores validan estas predicciones teóricas con experimentos:
+
+\textbf{Modelo entrenado GPT-J:}
+\begin{itemize}
+    \item Letter task: $>90\%$ de precisión hasta 850 tokens (¡53× la longitud original de entrenamiento!).
+    \item Number task: la precisión cae rápidamente después de la longitud de entrenamiento.
+\end{itemize}
+
+\textbf{Modelos frontera (GPT 5.4, GPT 5.5, Claude Sonnet 3.7):}
+\begin{itemize}
+    \item Letter task: precisión $>0.88$ a longitud 32, $>0.65$ a longitud 100.
+    \item Number task: precisión $<0.5$ a longitud 32, $<0.1$ a longitud 100.
+\end{itemize}
+
+Estos resultados confirman que la asimetría posicional/simbólica no es un artefacto del modelo pequeño, sino una propiedad fundamental que se mantiene en los modelos más grandes y capaces.
+
+\section{Nuestra interpretación}
+
+\subsection{La discrepancia como herramienta de análisis}
+
+La noción de discrepancia es, en nuestra opinión, una de las contribuciones más elegantes del artículo. Proporciona un \textbf{puente cuantitativo} entre la arquitectura (RoPE, frecuencias) y el comportamiento (generalización). Es el tipo de herramienta que nos gustaría desarrollar en nuestro TFM: una métrica teórica que predice el comportamiento empírico.
+
+\subsection{Conexión con NTK}
+
+En teoría de NTK, el kernel efectivo de una red determina qué funciones puede aprender y con qué velocidad. La discrepancia juega un papel similar aquí: determina qué tan bien puede un attention head ``distinguir'' entre tokens en función de la longitud de la secuencia. Ambos son ejemplos de cómo las propiedades geométricas de la arquitectura (el kernel en NTK, la rotación RoPE aquí) determinan la capacidad de generalización.
+
+\subsection{Implicaciones prácticas}
+
+El resultado más práctico es claro: \textbf{si puedes diseñar tu tarea para que sea resoluble con razonamiento simbólico, tu modelo generalizará mejor}. Esto tiene implicaciones para:
+\begin{itemize}
+    \item Diseño de prompts: formular preguntas que requieran ``buscar el concepto X'' en lugar de ``mirar 3 posiciones atrás''.
+    \item Arquitectura: sesgar el aprendizaje hacia frecuencias RoPE bajas (fomentando heads simbólicos).
+    \item Entrenamiento: monitorizar la pureza de heads durante el entrenamiento como indicador de la calidad del modelo.
+\end{itemize}
+
+% =============================================================================
+% CAPÍTULO 7: GUÍA DE IMPLEMENTACIÓN
+% =============================================================================
+\chapter{Guía de Implementación}
+
+En este capítulo recorremos la implementación completa del código, desde la generación de datos hasta las visualizaciones.
+
+\section{Estructura del repositorio}
+
+El código original se organiza de la siguiente manera:
+
+\begin{verbatim}
+number-and-letter-neurips26-C754/
++-- LICENSE                        (MIT License)
++-- README.md
++-- src/
+    +-- cmds/                      (Puntos de entrada)
+    |   +-- multihop_exp.py        (Number Task - entrenamiento)
+    |   +-- symbolic_exp.py        (Letter Task - entrenamiento)
+    |   +-- get_attention_weights.py   (Extracción de atención)
+    |   +-- compute_metrics.py     (Positional/Symbolic scores)
+    |   +-- compute_metrics_multiple_queries.py
+    |   +-- compute_symbolic_metrics.py
+    |   +-- schemas.py             (Configuraciones Pydantic)
+    +-- data/                      (Generación de datasets)
+    |   +-- dataset.py             (Number Task dataset)
+    |   +-- symbolic_dataset.py    (Letter Task dataset)
+    |   +-- generate_dataset_sym.py
+    |   +-- utils.py               (Validación)
+    +-- lib/                       (Librerías)
+    |   +-- metrics.py             (Pos/Sym scores - código real)
+    |   +-- s3.py                  (Subida/descarga a S3)
+    +-- models/
+        +-- train.py               (Trainer personalizado)
+\end{verbatim}
+
+\section{Generación de datos}
+
+\subsection{Number Task dataset}
+
+El dataset de Number Task se genera siguiendo la Definición B.1 del apéndice del paper. Cada secuencia consiste en:
+
+\begin{itemize}
+    \item Una \textbf{ventana objetivo} de $n_1 = 8$ posiciones, que contiene letras intercaladas con números.
+    \item Una \textbf{ventana de contexto} de $n_2 = 8$ posiciones, que contiene solo números.
+    \item El camino de hops se define recursivamente: dado un número $j_{k_i}$ en la posición $k_i$, el siguiente hop está en $k_{i+1} = k_i - j_{k_i}$.
+\end{itemize}
+
+\begin{lstlisting}
+# Número de letras en el vocabulario
+NUM_LETTERS = 120   # a-z + bigramas aa-dp
+NUM_INTEGERS = 16   # 1..16
+VOCAB_SIZE = NUM_LETTERS + NUM_INTEGERS  # 136
+
+# Parámetros del dataset
+N1 = 8   # target window
+N2 = 8   # pre-target window
+MAX_HOPS = 4
+N_TRAIN = 432000
+N_VAL = 2400
+N_TEST = 45600
+\end{lstlisting}
+
+Cada secuencia se genera asegurando que el camino de hops esté bien definido:
+
+\begin{lstlisting}
+def generate_number_sequence(hops, target_letter, target_pos):
+    """
+    hops: int (1-4), numero de hops
+    target_letter: str, letra a recuperar
+    target_pos: int, posicion de la letra en target window
+    """
+    target_window = []
+    # Rellenar con letras + numeros de hop
+    for i in range(N1):
+        if i == target_pos:
+            target_window.append(target_letter)
+        else:
+            target_window.append(random_letter())
+    # Anadir numeros de hop
+    target_window.extend([random_int() for _ in range(hops)])
+
+    pre_target = [random_int() for _ in range(N2)]
+
+    # Validar: el ultimo entero apunta a la posicion correcta
+    # y la cadena de hops es completa
+    validate_hop_sequence(target_window + pre_target, hops)
+    return target_window + pre_target
+\end{lstlisting}
+
+\subsection{Letter Task dataset}
+
+Para la Letter Task, cada token es un par (letra, tipo):
+
+\begin{lstlisting}
+ALPHABET = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+INTEGERS = [1, 2, 3, 4, 5, 6, 7, 8]
+VOCAB_SIZE_LETTER = 128  # 64 pares letra-numero + 64 pares letra-letra
+
+def generate_letter_sequence(hops):
+    """
+    hops: int, numero de hops (1-4)
+    """
+    # Target window: pares (letra, numero)
+    target_window = [(random_letter(), random_int())
+                     for _ in range(N1)]
+
+    # Pre-target window: pares (letra, letra)
+    # Cada par (X,Y) indica: busca el par con primera letra = Y
+    pre_target = []
+    for h in range(hops):
+        pair = (random_letter(), random_letter())
+        pre_target.append(pair)
+
+    # Validar que el camino es unico:
+    # y_{k_i} = x_{k_{i+1}} para cada i
+    validate_letter_sequence(target_window + pre_target, hops)
+    return target_window + pre_target
+\end{lstlisting}
+
+\section{Modelo GPT-J}
+
+La implementación del modelo sigue la arquitectura estándar de GPT-J adaptada a single-head:
+
+\begin{lstlisting}
+class GPTJModel(nn.Module):
+    """Decoder-only Transformer basado en GPT-J."""
+
+    def __init__(self, config):
+        self.embedding = nn.Embedding(
+            config.vocab_size, config.d_model)
+        self.blocks = nn.ModuleList([
+            TransformerBlock(config)
+            for _ in range(config.layers)
+        ])
+        self.ln_f = nn.LayerNorm(config.d_model)
+        self.lm_head = nn.Linear(
+            config.d_model, config.vocab_size, bias=False)
+        # Weight tying
+        self.lm_head.weight = self.embedding.weight
+
+    def forward(self, input_ids):
+        """Forward pass con causal masking."""
+        x = self.embedding(input_ids)
+        attention_maps = []
+
+        for block in self.blocks:
+            x, attn = block(x)
+            attention_maps.append(attn)
+
+        x = self.ln_f(x)
+        logits = self.lm_head(x)
+        return logits, attention_maps
+\end{lstlisting}
+
+\subsection{Atención single-head con RoPE}
+
+El núcleo de la implementación es SingleHeadAttention con RoPE:
+
+\begin{lstlisting}
+class SingleHeadAttention(nn.Module):
+    """Atencion single-head con RoPE."""
+
+    def __init__(self, config):
+        self.d_model = config.d_model
+        self.d_head = config.d_head
+
+        self.q_proj = nn.Linear(d_model, d_head, bias=False)
+        self.k_proj = nn.Linear(d_model, d_head, bias=False)
+        self.v_proj = nn.Linear(d_model, d_head, bias=False)
+        self.out_proj = nn.Linear(d_head, d_model, bias=False)
+
+    def _apply_rope(self, x, positions):
+        """Aplica RoPE: rota pares de dimensiones."""
+        # Para cada par (x_2k, x_{2k+1}):
+        # RoPE(x,p)_2k = x_2k*cos(p*theta_k) - x_{2k+1}*sin(p*theta_k)
+        # RoPE(x,p)_{2k+1} = x_2k*sin(p*theta_k) + x_{2k+1}*cos(p*theta_k)
+        cos, sin = self._compute_rope_cache(positions)
+        x_rot = x * cos + self._rotate_half(x) * sin
+        return x_rot
+
+    def forward(self, x, mask=None):
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+
+        positions = torch.arange(x.shape[1], device=x.device)
+        q = self._apply_rope(q, positions)
+        k = self._apply_rope(k, positions)
+
+        scores = torch.matmul(q, k.transpose(-2, -1))
+        scores = scores / math.sqrt(self.d_head)
+
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, float('-inf'))
+
+        attn_weights = F.softmax(scores, dim=-1)
+        output = torch.matmul(attn_weights, v)
+        output = self.out_proj(output)
+        return output, attn_weights
+\end{lstlisting}
+
+\section{Entrenamiento}
+
+El entrenamiento usa \textbf{last-token prediction}: solo la pérdida en el último token contribuye al gradiente. Esto fuerza al modelo a desarrollar una representación interna completa de la tarea.
+
+\begin{lstlisting}
+def train_epoch(model, dataloader, optimizer):
+    for batch in dataloader:
+        input_ids, labels = batch
+
+        logits, _ = model(input_ids)
+
+        # Solo el ultimo token contribuye a la perdida
+        loss = F.cross_entropy(
+            logits[:, -1, :],    # Ultimo paso de tiempo
+            labels[:, -1],        # Etiqueta del ultimo token
+            ignore_index=-100
+        )
+
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+\end{lstlisting}
+
+La evaluación se realiza por número de hops:
+
+\begin{lstlisting}
+def evaluate(model, test_loader):
+    model.eval()
+    correct = 0
+    total = 0
+    hop_correct = {1: 0, 2: 0, 3: 0, 4: 0}
+    hop_total = {1: 0, 2: 0, 3: 0, 4: 0}
+
+    with torch.no_grad():
+        for batch in test_loader:
+            input_ids, labels, hop_counts = batch
+            logits, _ = model(input_ids)
+            predictions = logits[:, -1, :].argmax(dim=-1)
+
+            for pred, label, hops in zip(
+                predictions, labels[:, -1], hop_counts
+            ):
+                if pred == label:
+                    correct += 1
+                    hop_correct[hops.item()] += 1
+                total += 1
+                hop_total[hops.item()] += 1
+
+    acc = correct / total
+    hop_acc = {h: hop_correct[h] / hop_total[h]
+               for h in range(1, 5) if hop_total[h] > 0}
+    return acc, hop_acc
+\end{lstlisting}
+
+\section{Métricas: Positional/Symbolic scores}
+
+El módulo \texttt{lib/metrics.py} contiene la implementación real de las métricas, que sigue fielmente las definiciones del paper. La función principal itera sobre todas las capas del modelo y todas las secuencias del dataset para calcular los scores promedio.
+
+\section{Visualizaciones}
+
+El código incluye cuatro módulos de visualización que generan las figuras del paper:
+
+\begin{itemize}
+    \item \textbf{learning\_dynamics.py:} accuracy por hop, scores por capa, pureza de heads (Figura 2).
+    \item \textbf{attention\_patterns.py:} matrices de atención por capa (Figura 3).
+    \item \textbf{geometric\_analysis.py:} vectores query/key en el plano RoPE (Figura 4).
+    \item \textbf{generalization\_plots.py:} discrepancia teórica y resultados de LLMs (Figura 5).
+\end{itemize}
+
+\section{Flujo de ejecución completo}
+
+\begin{lstlisting}[language=bash]
+# 1. Generar datasets
+python dataset/number_task.py --output data/number_task/
+python dataset/letter_task.py --output data/letter_task/
+
+# 2. Entrenar modelos
+python training/train.py --config configs/number_task.yaml
+python training/train.py --config configs/letter_task.yaml
+
+# 3. Calcular metricas
+python metrics/positional_symbolic_scores.py \
+    --model models/number_model/
+
+# 4. Analisis de pureza
+python analysis/head_purity.py --scores results/scores_number.pkl
+
+# 5. Pruebas de generalizacion
+python analysis/generalization.py \
+    --model models/number_model/ --dataset data/number_task/
+
+# 6. Visualizaciones
+python visualization/learning_dynamics.py
+python visualization/generalization_plots.py
+\end{lstlisting}
+
+% =============================================================================
+% CAPÍTULO 7: Impl - Flujo de ejecucions
+% =============================================================================
+\section{Nuestra interpretación de la implementación}
+
+La implementación es notablemente limpia y bien estructurada. Cada módulo tiene una responsabilidad clara, y el flujo de ejecución es lineal. Esto facilita la reproducibilidad y la extensión.
+
+Un aspecto destacable es el uso de configuraciones Pydantic (\texttt{schemas.py}), que hace que los experimentos sean configurables sin tocar el código. Esto es una buena práctica que recomendaríamos para cualquier proyecto de investigación.
+
+La separación entre ``cmds'' (puntos de entrada) y ``lib'' (librerías) también es acertada: los experimentos son scripts ejecutables que importan funciones de las librerías, manteniendo el código DRY (Don't Repeat Yourself).
+
+% =============================================================================
+% CAPÍTULO 8: EVALUACIÓN EN LLMs
+% =============================================================================
+\chapter{Evaluación en Modelos Frontera}
+
+\section{Metodología}
+
+Para validar que los resultados obtenidos con el modelo pequeño (GPT-J de 12 capas) se mantienen en modelos a gran escala, los autores evalúan GPT 5.4, GPT 5.5 y Claude Sonnet 3.7 en versiones 1-hop de ambas tareas.
+
+Los prompts están diseñados para ser accesibles:
+
+\begin{lstlisting}
+NUMBER_TASK_PROMPT = """You will be given a sequence of space-separated tokens.
+Your task is to find the target token by following these rules:
+1. Identify the very last token in the sequence (a number 'n').
+2. Move 'n' positions to the left from that final token.
+3. The token you land on is the target token.
+Output just the target token and absolutely nothing else.
+
+Example: Input: "a z b y c x d w 5"
+Output: y
+
+Task:
+Input: "{sequence}"
+Output:"""
+\end{lstlisting}
+
+\section{Resultados}
+
+\begin{table}[h]
+\centering
+\caption{Precisión de modelos frontera en ambas tareas}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Modelo} & \textbf{Letter (long. 32)} & \textbf{Number (long. 32)} \\
+\midrule
+GPT 5.4     & $>0.88$ & $<0.50$ \\
+GPT 5.5     & $>0.88$ & $<0.50$ \\
+Claude Sonnet 3.7 & $>0.88$ & $<0.50$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Precisión de modelos frontera a longitud 100}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Modelo} & \textbf{Letter (long. 100)} & \textbf{Number (long. 100)} \\
+\midrule
+GPT 5.4     & $>0.65$ & $<0.10$ \\
+GPT 5.5     & $>0.65$ & $<0.10$ \\
+Claude Sonnet 3.7 & $>0.65$ & $<0.10$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Los resultados son notables: \textbf{todos los modelos} muestran el mismo patrón. La tarea simbólica (Letter) se mantiene por encima del 65\% incluso a longitud 100, mientras que la tarea posicional (Number) cae por debajo del 10\%.
+
+\section{Nuestra interpretación}
+
+La consistencia de estos resultados a través de modelos y familias sugiere que la asimetría posicional/simbólica es una \textbf{propiedad fundamental} de la arquitectura transformer con RoPE, no un artefacto del tamaño del modelo.
+
+Esto tiene implicaciones importantes: si todos los modelos actuales (incluyendo los más avanzados) tienen esta limitación, entonces \textbf{ningún modelo actual puede hacer razonamiento posicional puro a larga distancia}. Esto explica, por ejemplo, por qué los LLMs fallan en tareas que requieren contar posiciones exactas en textos largos, como ``¿cuál es la palabra en la posición 150 de este documento?''.
+
+La solución no es hacer modelos más grandes, sino \textbf{cambiar la arquitectura} para que el razonamiento posicional no sea necesario, o para que los modelos puedan aprender mecanismos simbólicos incluso para tareas que parecen posicionales.
+
+% =============================================================================
+% CAPÍTULO 9: DISCUSIÓN
+% =============================================================================
+\chapter{Discusión e Interpretación}
+
+\section{¿Qué hemos aprendido?}
+
+Este artículo nos enseña varias cosas:
+
+\begin{enumerate}
+    \item \textbf{Los transformers desarrollan especialización:} los attention heads se vuelven puros (posicionales o simbólicos) durante el entrenamiento, y esta pureza es necesaria para el rendimiento.
+    \item \textbf{El tipo de mecanismo determina la generalización:} los mecanismos simbólicos son intrínsecamente más robustos a la longitud de la secuencia que los posicionales.
+    \item \textbf{La geometría de RoPE explica por qué:} la discrepancia de los mecanismos posicionales decae como $O(1/n^2)$, mientras que la de los simbólicos se mantiene constante si la frecuencia RoPE es suficientemente baja.
+    \item \textbf{Los resultados escalan:} lo que observamos en un modelo pequeño se reproduce en los modelos frontera más grandes.
+\end{enumerate}
+
+\section{Implicaciones para el diseño de LLMs}
+
+\subsection{Monitorización del entrenamiento}
+
+Las métricas positional/symbolic scores podrían usarse como herramienta de monitorización durante el entrenamiento de LLMs. Si observamos que los heads no se están volviendo puros, o que están desarrollando demasiados heads posicionales, podríamos ajustar el entrenamiento (por ejemplo, aumentando la frecuencia base de RoPE) para fomentar comportamientos simbólicos.
+
+\subsection{Diseño de prompts}
+
+Para tareas que requieren generalización a largo contexto, es mejor formularlas de manera que favorezcan el razonamiento simbólico. Por ejemplo, en lugar de ``encuentra la palabra que está 10 posiciones antes de la palabra 'X' '', sería mejor ``encuentra la palabra que está asociada semánticamente con 'X' ''.
+
+\subsection{Arquitecturas alternativas}
+
+Los resultados sugieren que explorar codificaciones posicionales alternativas o mecanismos de atención que favorezcan el comportamiento simbólico podría ser una dirección fructífera. Por ejemplo, atención con sesgo hacia frecuencias bajas, o mecanismos de atención que combinen información posicional y simbólica de forma explícita.
+
+\section{Relación con nuestro TFM}
+
+En nuestro TFM sobre NNGP/NTK, estamos estudiando cómo la arquitectura de una red neuronal determina su kernel efectivo y, por tanto, qué funciones puede aprender. Este artículo es un ejemplo perfecto de este principio aplicado a transformers: la arquitectura (RoPE, single-head) determina qué mecanismos pueden emerger (posicional, simbólico) y cómo estos mecanismos generalizan.
+
+La noción de \textbf{discrepancia} es particularmente relevante: es un análogo a cómo el NTK determina la velocidad de aprendizaje y la generalización. Ambos son propiedades geométricas de la arquitectura que tienen consecuencias predictivas.
+
+\section{Limitaciones y trabajo futuro}
+
+El artículo tiene limitaciones que los propios autores reconocen:
+\begin{itemize}
+    \item Configuración single-head, que no es representativa de modelos multi-head reales.
+    \item Vocabulario finito que limita las pruebas de extrapolación.
+    \item Solo se estudiaron tareas multi-hop simples.
+\end{itemize}
+
+El trabajo futuro podría extender el análisis a:
+\begin{itemize}
+    \item Modelos multi-head, donde diferentes cabezas en la misma capa podrían tener comportamientos mixtos.
+    \item Tareas más complejas que requieran combinar información posicional y simbólica.
+    \item Estrategias de entrenamiento que favorezcan explícitamente el desarrollo de heads simbólicos.
+\end{itemize}
+
+% =============================================================================
+% CAPÍTULO 10: CONCLUSIONES
+% =============================================================================
+\chapter{Conclusiones}
+
+El artículo ``Positional versus Symbolic Attention Heads: Learning Dynamics, RoPE Geometry, and Length Generalization'' hace una contribución fundamental a nuestra comprensión de los transformers. Sus principales contribuciones son:
+
+\begin{enumerate}
+    \item \textbf{Tareas estructuralmente equivalentes} que requieren perfiles de atención distintos (posicional vs. simbólico), proporcionando un banco de pruebas limpio para estudiar ambos mecanismos.
+    \item \textbf{Relación entre pureza de heads y precisión:} la máxima precisión requiere heads claramente posicionales o simbólicos, no mixtos.
+    \item \textbf{Descomposición mecanística:} identificación de tres funciones básicas (Index, Retrieval, Reflexive) que explican cómo el modelo resuelve las tareas.
+    \item \textbf{Construcciones teóricas:} demostración de cómo RoPE puede implementar estas funciones con interpretación geométrica clara.
+    \item \textbf{Noción de discrepancia:} una herramienta cuantitativa para predecir la degradación con la longitud.
+    \item \textbf{Separación cuantitativa:} demostración de que los mecanismos simbólicos generalizan mucho mejor que los posicionales, convalidada en modelos frontera.
+\end{enumerate}
+
+Para nosotros, la lección más importante es que \textbf{la arquitectura importa}. No solo determina qué tan bien aprende un modelo, sino \emph{cómo} aprende y \emph{qué} tipo de representaciones internas desarrolla. Y estas representaciones internas, a su vez, determinan qué tan bien generaliza el modelo.
+
+En el contexto de nuestro TFM, este artículo es una inspiración: nos muestra cómo un diseño experimental cuidadoso, combinado con análisis teórico, puede revelar principios profundos sobre el funcionamiento de las redes neuronales. Es el tipo de contribución que aspiramos a hacer con nuestro trabajo sobre NNGP/NTK.
+
+% =============================================================================
+% BIBLIOGRAFÍA
+% =============================================================================
+\chapter*{Bibliografía}
+\addcontentsline{toc}{chapter}{Bibliografía}
+
+\begin{enumerate}
+    \item F. Urrutia, J. J. Alegría, C. Sanchez Macias, J. Salas, C. B. Calderon, C. Rojas. ``Positional versus Symbolic Attention Heads: Learning Dynamics, RoPE Geometry, and Length Generalization.'' arXiv:2605.31558, NeurIPS 2026.
+    \item F. Urrutia et al. ``Decoupling positional and symbolic attention behavior in transformers.'' arXiv:2511.11579, 2025.
+    \item F. Barbero, A. Banino, S. K. S. G. ``Round and round we go! What makes rotary positional encodings useful?'' 2024.
+    \item J. Su, M. Ahmed, Y. Lu, S. Pan, W. Bo, Y. Liu. ``RoFormer: Enhanced Transformer with Rotary Position Embedding.'' 2024.
+    \item D. Pasten, V. R. S. ``Continuity and isolation lead to doubts or dilemmas in large language models.'' 2025.
+    \item A. Vaswani et al. ``Attention Is All You Need.'' NeurIPS 2017.
+    \item J. Kaplan et al. ``Scaling Laws for Neural Language Models.'' 2020.
+\end{enumerate}
+
+\end{document}
