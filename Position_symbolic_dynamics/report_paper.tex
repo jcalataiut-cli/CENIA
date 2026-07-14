@@ -1,0 +1,276 @@
+\documentclass[conference]{IEEEtran}
+
+% Packages
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\begin{document}
+
+\title{Informe del Artículo: Positional versus Symbolic Attention Heads}
+
+\author{
+    \textbf{Autores originales:} Felipe Urrutia, Juan Jos\'e Alegr\'ia,\\
+    Cinthia Sanchez Macias, Jorge Salas, Cristian B. Calderon,\\
+    Cristobal Rojas\\
+    \textbf{Afiliaci\'on:} CENIA \& Faculty of Mathematics UC, Santiago, Chile\\
+    \textbf{arXiv:} 2605.31558 (NeurIPS 2026)
+}
+
+\maketitle
+
+\begin{abstract}
+Este art\'iculo estudia c\'omo los \textbf{attention heads} en transformers desarrollan comportamientos \textbf{posicionales} versus \textbf{simb\'olicos} durante el entrenamiento, y c\'omo estos comportamientos afectan la capacidad de generalizaci\'on a secuencias m\'as largas. Se introducen tareas estructuralmente equivalentes que requieren perfiles de atenci\'on distintos, se define una descomposici\'on mecanicista en funciones b\'asicas (Index, Retrieval, Reflexive), y se presenta un an\'alisis te\'orico de c\'omo RoPE puede implementar estas funciones con interpretaci\'on geom\'etrica, estableciendo cotas de discrepancia que explican cuantitativamente la degradaci\'on con la longitud de secuencia.
+\end{abstract}
+
+\section{Motivaci\'on y Contexto}
+
+Los transformers modernos (GPT, Claude, etc.) usan \textbf{Rotary Positional Encoding (RoPE)} para codificar informaci\'on posicional. Sin embargo, no se entend\'ia bien c\'omo los attention heads aprenden a usar la informaci\'on posicional (atender a posiciones espec\'ificas) versus informaci\'on simb\'olica (atender a tokens espec\'ificos sin importar su posici\'on).
+
+Trabajo previo de Urrutia et al. (2025) introdujo \textbf{m\'etricas} para clasificar heads como posicionales o simb\'olicas, y observaron que en modelos reales las capas tempranas tienden a ser posicionales y las profundas simb\'olicas. Este art\'iculo \textbf{extiende ese an\'alisis al estudio de la din\'amica de aprendizaje} y a la \textbf{generalizaci\'on a largo contexto}.
+
+\section{Tareas Propuestas}
+
+\subsection{Number Task (Tarea Num\'erica)}
+
+\begin{itemize}
+    \item \textbf{Entrada:} Una secuencia de letras seguida de n\'umeros.
+    \item \textbf{Mecanismo:} Cada n\'umero indica cu\'antas posiciones retroceder en la secuencia.
+    \item \textbf{Ejemplo (4-hop):} \texttt{C B A ... 1 4 1 3 2 1 1} $\rightarrow$ hop1: retrocede 1 $\rightarrow$ hop2: retrocede 4 $\rightarrow$ hop3: retrocede 1 $\rightarrow$ hop4: retrocede 3 $\rightarrow$ respuesta: letra en posici\'on final.
+    \item \textbf{Tipo de razonamiento:} \textbf{Posicional} -- requiere seguir posiciones relativas.
+    \item \textbf{Vocabulario:} 120 letras (a--z + bigramas aa--dp) + 16 enteros $\{1,\dots,16\}$ = 136 tokens.
+\end{itemize}
+
+\subsection{Letter Task (Tarea de Letras)}
+
+\begin{itemize}
+    \item \textbf{Entrada:} Una secuencia de pares letra-letra seguida de pares letra-n\'umero.
+    \item \textbf{Mecanismo:} Cada par $(X,Y)$ indica ``busca el par cuya primera letra es $Y$''.
+    \item \textbf{Ejemplo (4-hop):} \texttt{(I,G) (G,D) (D,E) (E,C) (H,F) ... (C,2)} $\rightarrow$ hop1: $G$ busca a $(I,G)$ $\rightarrow$ hop2: $D$ busca a $(G,D)$ $\rightarrow$ \dots $\rightarrow$ respuesta: $(C,2)$.
+    \item \textbf{Tipo de razonamiento:} \textbf{Simb\'olico} -- requiere seguir asociaciones entre s\'imbolos.
+    \item \textbf{Vocabulario:} 8 letras $\{a,\dots,h\}$ + 8 enteros $\{1,\dots,8\}$ = 64 pares $\times$ 2 tipos = 128 tokens.
+\end{itemize}
+
+Ambas tareas son \textbf{estructuralmente equivalentes} (misma estructura multi-hop), pero demandan \textbf{mecanismos distintos}.
+
+\section{Configuraci\'on Experimental}
+
+\subsection{Arquitectura del Modelo}
+
+\begin{itemize}
+    \item \textbf{Modelo:} GPT-J (decoder-only Transformer)
+    \item \textbf{Capas:} 12
+    \item \textbf{Attention heads:} 1 por capa (single-head, para aislar mecanismos)
+    \item \textbf{Dimensi\'on oculta:} 128
+    \item \textbf{Posicional encoding:} RoPE
+    \item \textbf{Activaci\'on:} GELU
+    \item \textbf{Dropout:} 0.1
+    \item \textbf{Objetivo:} Last-token prediction (solo se optimiza la p\'erdida en el \'ultimo token)
+\end{itemize}
+
+\subsection{Dataset}
+
+\begin{itemize}
+    \item \textbf{480,000 secuencias} por tarea
+    \item Cada secuencia: 17 tokens (8 target window + 8 pre-target window + 1 query)
+    \item Balanceado: misma proporci\'on de casos 1-hop, 2-hop, 3-hop, 4-hop
+    \item Split: 90\% train / 0.5\% validation / 9.5\% test
+\end{itemize}
+
+\subsection{Entrenamiento}
+
+\begin{itemize}
+    \item Entrenamiento con 3 NVIDIA RTX A5000 (24GB cada una)
+    \item Tiempo total: $\sim$55 minutos por modelo
+    \item M\'etricas de positional/symbolic score: 10h GPU + 17h CPU
+\end{itemize}
+
+\section{M\'etricas: Positional y Symbolic Scores}
+
+Basado en Urrutia et al. (2025), se definen dos m\'etricas para cuantificar el comportamiento de un attention head.
+
+\subsection{Definici\'on Formal}
+
+Un head act\'ua \textbf{posicionalmente} si su distribuci\'on de atenci\'on es \textbf{invariante} ante permutaciones de los key vectors. Es decir, atiende a posiciones espec\'ificas sin importar qu\'e token est\'e ah\'i.
+
+Un head act\'ua \textbf{simb\'olicamente} si su distribuci\'on de atenci\'on es \textbf{equivariante} ante permutaciones. Es decir, atiende a tokens espec\'ificos sin importar su posici\'on.
+
+\subsection{Scores}
+
+Se calculan mediante:
+\begin{itemize}
+    \item \textbf{Permutaciones por pares} (swaps) entre posiciones $i$, $j$
+    \item \textbf{Peso de cada permutaci\'on} basado en la masa de atenci\'on movida (softmax con temperatura)
+    \item \textbf{Positional Score:} Similitud coseno entre atenci\'on original y atenci\'on tras permutar
+    \item \textbf{Symbolic Score:} Similitud coseno entre atenci\'on original y atenci\'on ``can\'onica'' tras permutar
+\end{itemize}
+
+\section{Resultados Principales}
+
+\subsection{Din\'amica de Aprendizaje (Figura 2)}
+
+\textbf{Number Task:}
+\begin{itemize}
+    \item El accuracy emerge \textbf{progresivamente}: primero se aprende 1-hop, luego 2-hop, etc.
+    \item Se requieren \textbf{heads posicionales} para el Indexing + \textbf{heads simb\'olicas} para propagaci\'on.
+    \item Las heads posicionales aparecen en capas medias (L3--L6).
+    \item Las heads simb\'olicas aparecen en capas profundas (L9--L11).
+\end{itemize}
+
+\textbf{Letter Task:}
+\begin{itemize}
+    \item El accuracy emerge \textbf{simult\'aneamente} para todos los hops.
+    \item Solo se requieren \textbf{heads simb\'olicas} (Retrieval).
+    \item La \'ultima head simb\'olica en L11 es necesaria para todos los hops.
+    \item Las heads posicionales no son necesarias.
+\end{itemize}
+
+\subsection{Pureza de Heads}
+
+La \textbf{pureza} (heads que son claramente posicionales O simb\'olicas, no mixtas) es necesaria para alcanzar m\'axima precisi\'on. Esto valida las m\'etricas como herramienta de interpretabilidad.
+
+\subsection{Funciones Mecanicistas Identificadas}
+
+Tres funciones b\'asicas implementadas por los heads puros:
+
+\begin{enumerate}
+    \item \textbf{Selective Index (Index):} Dada una posici\'on con un n\'umero $n$, copia el token $n$ posiciones atr\'as, pero solo si es una letra. $\rightarrow$ \textbf{Posicional}
+
+    \item \textbf{Retrieval:} Dado un par $(X,Y)$, busca el par anterior cuya primera letra sea $Y$ y lo copia. $\rightarrow$ \textbf{Simb\'olico}
+
+    \item \textbf{Reflexive:} Copia el token actual a la siguiente capa sin cambios. $\rightarrow$ Puede ser posicional o simb\'olico (en la pr\'actica, simb\'olico).
+\end{enumerate}
+
+\subsection{Descomposici\'on Mecanicista}
+
+Para una entrada con $h$ hops y un modelo con $\ell \ge h$ capas:
+
+\begin{itemize}
+    \item \textbf{Number Task:} $f_{\text{Num}}(\sigma) = \text{Reflexive}^{(\ell-h)}(\text{Index}^{h}(\sigma))[n]$
+    \item \textbf{Letter Task:} $f_{\text{Let}}(\sigma) = \text{Reflexive}^{(\ell-h)}(\text{Retrieval}^{h}(\sigma))[n]$
+\end{itemize}
+
+\section{An\'alisis Te\'orico: Mecanismos Geom\'etricos en RoPE}
+
+\subsection{Teorema 3.1 (Factibilidad)}
+
+Existe un Transformer $T_{\text{Index}}$ con atenci\'on RoPE 2D que implementa Index, y un $T_{\text{Retrieval}}$ que implementa Retrieval, ambos con una sola cabeza de atenci\'on y sin funciones de activaci\'on.
+
+\textbf{Mecanismo para Index (Posicional):}
+\begin{itemize}
+    \item Key vectors: todos alineados (iguales a un vector $v$)
+    \item Query vectors: codifican la posici\'on a atender mediante rotaci\'on RoPE
+    \item La atenci\'on m\'axima ocurre exactamente en la posici\'on deseada $(n - \sigma_n)$
+    \item Los value vectors solo copian si el token es letra (mapeo diagonal)
+\end{itemize}
+
+\textbf{Mecanismo para Retrieval (Simb\'olico):}
+\begin{itemize}
+    \item Key vectors: codifican la letra izquierda del par mediante rotaci\'on con \'angulo $\omega$
+    \item Query vectors: codifican la letra derecha del par consultante
+    \item La atenci\'on m\'axima ocurre donde la letra izquierda del key coincide con la letra derecha del query
+    \item La posici\'on exacta no importa, solo la identidad del s\'imbolo
+\end{itemize}
+
+\subsection{Remark 3.1}
+
+Index \textbf{no puede} implementarse con un head puramente simb\'olico.
+Retrieval \textbf{no puede} implementarse con un head puramente posicional.
+
+Esto demuestra la \textbf{separaci\'on fundamental} entre ambos tipos de mecanismos.
+
+\section{An\'alisis de Robustez: Discrepancia}
+
+\subsection{Definici\'on de Discrepancia (Definici\'on 3.1)}
+
+La \textbf{discrepancia $\Delta$} de un attention head es la diferencia m\'axima entre el logit m\'as grande y el segundo m\'as grande para entradas de cierta longitud.
+
+Intuitivamente: mide qu\'e tan distinguible es el token correcto del resto. Una discrepancia de 0 significa que el modelo no puede distinguir el token correcto.
+
+\subsection{Teorema 3.2 (Cotas de Discrepancia)}
+
+\textbf{Para Index (posicional):}
+\[
+\Delta_{\text{Index}}(n) \leq \min\left\{1 - \cos(\theta), \frac{\pi^2}{2n^2}\right\}
+\]
+
+\textbf{Para Retrieval (simb\'olico):}
+\[
+\Delta_{\text{Retrieval}}(n) \leq 1 - \cos(\omega - n\theta)
+\]
+
+\textbf{Interpretaci\'on:}
+\begin{itemize}
+    \item Index: la discrepancia decae como $\mathcal{O}(1/n^2)$ -- se degrada r\'apidamente con la longitud.
+    \item Retrieval: la discrepancia se mantiene \textbf{no nula} incluso para $n$ grandes si $\theta$ es peque\~no.
+    \item Si $\theta = 0$ (NoPE), $\Delta_{\text{Retrieval}}$ se mantiene positiva para cualquier longitud.
+\end{itemize}
+
+Esto demuestra cuantitativamente que \textbf{los mecanismos simb\'olicos generalizan mejor} a secuencias largas.
+
+\subsection{Validaci\'on Experimental (Figura 5)}
+
+Los resultados confirman las predicciones te\'oricas:
+
+\textbf{Modelo entrenado GPT-J:}
+\begin{itemize}
+    \item Letter task: $>90\%$ de precisi\'on hasta 850 tokens ($53\times$ la longitud original)
+    \item Number task: la precisi\'on cae r\'apidamente despu\'es de la longitud de entrenamiento
+\end{itemize}
+
+\textbf{Modelos frontera (GPT 5.4, GPT 5.5, Claude Sonnet 3.7):}
+\begin{itemize}
+    \item Letter task: precisi\'on $>0.88$ a longitud 32, $>0.65$ a longitud 100
+    \item Number task: precisi\'on $<0.5$ a longitud 32, $<0.1$ a longitud 100
+    \item Consistente con las predicciones del Teorema 3.2
+\end{itemize}
+
+\section{Conclusiones y Contribuciones}
+
+\subsection{Contribuciones Principales}
+
+\begin{enumerate}
+    \item \textbf{Tareas estructuralmente equivalentes} que requieren perfiles de atenci\'on distintos (posicional vs.~simb\'olico).
+    \item \textbf{Relaci\'on entre pureza de heads y precisi\'on:} La m\'axima precisi\'on requiere heads puros (claramente posicionales o simb\'olicos).
+    \item \textbf{Descomposici\'on mecanicista} de ambas tareas en funciones b\'asicas (Index, Retrieval, Reflexive).
+    \item \textbf{Construcciones te\'oricas} que muestran c\'omo RoPE puede implementar estas funciones con interpretaci\'on geom\'etrica.
+    \item \textbf{Noci\'on de discrepancia} para cuantificar la degradaci\'on con la longitud.
+    \item \textbf{Separaci\'on cuantitativa} entre mecanismos posicionales y simb\'olicos en t\'erminos de generalizaci\'on.
+\end{enumerate}
+
+\subsection{Implicaciones}
+
+\begin{itemize}
+    \item Los mecanismos simb\'olicos son \textbf{intr\'insecemente m\'as robustos} para longitudes largas.
+    \item Esto sugiere que entrenar modelos para que desarrollen estrategias simb\'olicas (vs.~posicionales) puede mejorar la generalizaci\'on.
+    \item Las m\'etricas positional/symbolic scores pueden servir como \textbf{herramienta de monitoreo} durante el entrenamiento de LLMs.
+\end{itemize}
+
+\subsection{Limitaciones}
+
+\begin{itemize}
+    \item Configuraci\'on controlada con single-head por capa (no multi-head como modelos reales).
+    \item Vocabulario finito limita pruebas de extrapolaci\'on.
+    \item Solo se estudiaron tareas multi-hop simples.
+\end{itemize}
+
+\section*{Referencias Clave}
+
+\begin{enumerate}
+    \item Urrutia et al. (2025) --- ``Decoupling positional and symbolic attention behavior in transformers'' (arXiv:2511.11579) --- Introduce las m\'etricas positional/symbolic scores.
+    \item Barbero et al. (2024) --- ``Round and round we go! What makes rotary positional encodings useful?'' --- Observa que heads simb\'olicas usan frecuencias bajas de RoPE.
+    \item Su et al. (2024) --- ``RoFormer: Enhanced Transformer with Rotary Position Embedding'' --- Paper original de RoPE.
+    \item Pasten et al. (2025) --- ``Continuity and isolation lead to doubts or dilemmas in large language models'' --- Sobre la dispersi\'on de atenci\'on con softmax.
+\end{enumerate}
+
+\end{document}

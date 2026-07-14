@@ -9,11 +9,15 @@ Este directorio contiene el análisis completo del paper de Urrutia et al. (2026
 ```
 Position_symbolic_dynamics/
 ├── paper_source/
-│   └── paper.pdf                    # Artículo original (PDF de arXiv)
+│   └── paper.pdf                          # Artículo original (PDF de arXiv)
 ├── positional_vs_symbolic_learningdynamics.pdf  # PDF adjunto
-| `code/`                            # Código fuente original del repositorio anónimo
-├── report_paper.md                  # Informe explicativo del artículo
-└── report_code.md                   # Informe explicativo del código
+├── code/                                  # Código fuente original
+├── report_paper.md                        # Informe del artículo (markdown)
+├── report_paper.pdf                       # Informe del artículo (LaTeX PDF, 3 pág.)
+├── report_code.md                         # Informe del código (markdown)
+├── report_code.pdf                        # Informe del código (LaTeX PDF, 26 pág.)
+├── report_paper.tex                       # Fuente LaTeX del informe del artículo
+└── report_code.tex                        # Fuente LaTeX del informe del código
 ```
 
 ### Resumen

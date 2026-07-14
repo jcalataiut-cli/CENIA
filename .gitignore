@@ -1,9 +1,16 @@
-__pycache__/
-*.pyc
+# LaTeX auxiliary files
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.bbl
+*.blg
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.nav
+*.snm
+*.vrb
 *~
-.DS_Store
-*.pt
-*.pth
-*.bin
-output/
-data/
