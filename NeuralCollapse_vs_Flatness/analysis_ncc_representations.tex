@@ -1,0 +1,902 @@
+\documentclass[12pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{cite}
+\usepackage{tikz}
+\usepackage{dsfont}
+\usepackage{bm}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\geometry{margin=2.5cm}
+
+% --- Theorem environments ---
+\newtheorem{definition}{Definición}[chapter]
+\newtheorem{theorem}{Teorema}[chapter]
+\newtheorem{lemma}{Lema}[chapter]
+\newtheorem{corollary}{Corolario}[chapter]
+\newtheorem{proposition}{Proposición}[chapter]
+\newtheorem{hypothesis}{Hipótesis}[chapter]
+\newtheorem{remark}{Observación}[chapter]
+\newtheorem{example}{Ejemplo}[chapter]
+
+% --- Notation shortcuts ---
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\V}{\mathbb{V}}
+\newcommand{\I}{\mathds{1}}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand{\inner}[2]{\langle #1, #2 \rangle}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\NCC}{\text{NCC}}
+\newcommand{\CE}{\text{CE}}
+\newcommand{\KL}{\text{KL}}
+\newcommand{\MI}{\text{MI}}
+
+% --- Code listing style ---
+\lstset{
+    language=Python,
+    basicstyle=\footnotesize\ttfamily,
+    numbers=left,
+    numberstyle=\tiny,
+    frame=single,
+    breaklines=true,
+    commentstyle=\color{gray},
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+}
+
+\title{\textbf{Análisis de Representaciones Latentes bajo Penalización de Neural Collapse\\
+\large Efectos de la regularización NCC en las propiedades geométricas del espacio de representación}
+}
+
+\author{Análisis original --- Repositorio \texttt{grokking\_flatness}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% =========================================================================
+\chapter{Introducción}
+% =========================================================================
+
+\section{¿Qué es Neural Collapse?}
+
+El fenómeno de \emph{Neural Collapse} (NC) fue formalizado por Papyan et al.~\cite{papyan2020prevalence} en el contexto de clasificación supervisada con redes neuronales profundas entrenadas más allá del punto de sobreajuste (i.e., cuando el error de entrenamiento es cero). En esta condición, las representaciones de la última capa oculta y los pesos del clasificador exhiben cuatro propiedades geométricas notables:
+
+\begin{enumerate}[label=NC\arabic*:]
+    \item \textbf{Varianza intra-clase colapsa a cero} (NC1). Para cada clase $c$, la varianza de sus representaciones $h_i^{(c)} \in \R^p$ tiende a cero:
+    \begin{equation}
+        \Sigma_W^{(c)} = \frac{1}{n_c}\sum_{i=1}^{n_c} (h_i^{(c)} - \mu_c)(h_i^{(c)} - \mu_c)^\top \;\longrightarrow\; 0,
+    \end{equation}
+    donde $\mu_c$ es el vector media de la clase $c$ y $n_c$ el número de ejemplos de esa clase.
+
+    \item \textbf{Convergencia de medias a un ETF} (NC2). Las medias de clase $\mu_c$, centradas respecto a la media global $\mu_G$, convergen a un marco tensorial equiangular (\emph{Equiangular Tight Frame}, ETF):
+    \begin{equation}
+        \frac{\tilde{\mu}_c}{\norm{\tilde{\mu}_c}} \quad\text{donde}\quad \tilde{\mu}_c = \mu_c - \mu_G,
+    \end{equation}
+    y para todo par $(c_1, c_2)$ con $c_1 \neq c_2$:
+    \begin{equation}
+        \inner{\tilde{\mu}_{c_1}}{\tilde{\mu}_{c_2}} = -\frac{1}{K-1},
+    \end{equation}
+    con $K$ el número de clases. En otras palabras, las medias de clase forman un simplex regular en el espacio de representación.
+
+    \item \textbf{Convergencia a autoduallidad} (NC3). Los pesos del clasificador lineal $W \in \R^{K \times p}$ se alinean con las medias de clase:
+    \begin{equation}
+        \frac{W_c}{\norm{W_c}} \;\longrightarrow\; \frac{\tilde{\mu}_c}{\norm{\tilde{\mu}_c}}.
+    \end{equation}
+
+    \item \textbf{Comportamiento del clasificador residual} (NC4). El clasificador por vecino más cercano a las medias (NMC) produce la misma decisión que el clasificador lineal:
+    \begin{equation}
+        \arg\max_c \; \inner{W_c}{h} + b_c \;\; \longleftrightarrow \;\; \arg\min_c \; \norm{h - \mu_c}.
+    \end{equation}
+\end{enumerate}
+
+Estas propiedades emergen de manera consistente en una amplia variedad de arquitecturas (ResNet, Transformers, etc.) y conjuntos de datos (CIFAR-10/100, ImageNet, etc.) cuando el modelo ha alcanzado el sobreajuste completo.
+
+\section{Motivación: ¿Es NC necesario para generalizar?}
+
+El trabajo de Han et al.~\cite{han2025flatness} plantea una pregunta fundamental: ¿es \emph{necesario} Neural Collapse para la generalización? Sus experimentos demuestran que, al penalizar explícitamente la métrica NCC (Neural Collapse Clustering) durante el entrenamiento, el modelo puede alcanzar alta precisión en test incluso mientras las representaciones NO exhiben colapso neural en el sentido clásico. Este hallazgo cuestiona la narrativa predominante de que NC es un prerequisito para la generalización~\cite{papyan2020prevalence, zhu2021geometric}.
+
+En este documento analizamos en profundidad el efecto de la penalización NCC sobre la geometría del espacio de representaciones y proponemos formas alternativas de «colapso» que podrían estar ocurriendo bajo estas condiciones de entrenamiento.
+
+\section{Estructura del documento}
+
+En el Capítulo~\ref{chap:embeddings} describimos cómo se extraen las representaciones latentes en los distintos experimentos del repositorio. En el Capítulo~\ref{chap:ncc} definimos formalmente la métrica NCC y su implementación. En el Capítulo~\ref{chap:efecto} analizamos el efecto de la penalización sobre las representaciones. En el Capítulo~\ref{chap:alternativo} presentamos nuestra contribución principal: la hipótesis de formas alternativas de colapso. En el Capítulo~\ref{chap:propuestas} proponemos análisis concretos para validar estas hipótesis. Finalmente, en el Capítulo~\ref{chap:conclusiones} sintetizamos las conclusiones.
+
+% =========================================================================
+\chapter{Cómo Extraer Embeddings}
+\label{chap:embeddings}
+% =========================================================================
+
+\section{ResNet-18 (experimentos nc\_experiments)}
+
+En los experimentos de colapso neural con ResNet-18, la extracción de la representación latente se realiza en el método \texttt{forward()} de la clase \texttt{ResNet} (archivo \texttt{nc\_experiments/resnet18.py}):
+
+\begin{lstlisting}
+def forward(self, x: Tensor) -> Tensor:
+    x = self.conv1(x)    # Primera convolucion
+    x = self.bn1(x)
+    x = self.relu(x)
+    x = self.maxpool(x)
+    x = self.layer1(x)
+    x = self.layer2(x)
+    x = self.layer3(x)
+    x = self.layer4(x)
+    x = self.avgpool(x)                   # Pooling global
+    second_last_outputs = torch.flatten(x, 1)  # Embedding
+    x = self.fc(second_last_outputs)      # Clasificador lineal
+    return x, second_last_outputs
+\end{lstlisting}
+
+La tupla \texttt{(outputs, second\_last\_outputs)} contiene:
+\begin{itemize}
+    \item \texttt{outputs}: el logit de dimensión $K$ (número de clases) tras la capa fully-connected $\mathbf{W} \in \R^{K \times p}$.
+    \item \texttt{second\_last\_outputs}: el vector de representación $h \in \R^p$ (con $p=512$ en ResNet-18 canónico) antes de la capa de clasificación. Es el embedding de la última capa oculta.
+\end{itemize}
+
+Durante el entrenamiento, estas representaciones se acumulan por época:
+\begin{lstlisting}
+outputs, second_last_outputs = model(image)
+train_repr_list.append(second_last_outputs)
+y_predict_train_list.append(labels)
+# ...
+train_cdnvs_list, mean_list, var_class_cluster_list = \
+    compute_cluster(torch.cat(train_repr_list),
+                    torch.cat(y_predict_train_list))
+\end{lstlisting}
+
+\section{ResNet-18 (experimentos rf\_resnet18)}
+
+El archivo \texttt{rf\_resnet18/training\_utils.py} replica exactamente el mismo patrón de extracción, con la diferencia de que ofrece más variantes de regularización (loss\_type1, loss\_type2, ortho regularization, phi normalization, spectral/frobenius capping). Sin embargo, el núcleo de la extracción de representaciones es idéntico:
+
+\begin{itemize}
+    \item En ResNet-18 y WideResNet: \texttt{outputs, second\_last\_outputs = model(image)}.
+    \item En EfficientNet-B0/V2: se utiliza \texttt{F.adaptive\_avg\_pool2d(model.forward\_features(image), (1, 1)).flatten(1)} como embedding, y \texttt{model.classifier.weight} para la norma del clasificador.
+\end{itemize}
+
+\section{Transformer de Grokking (grokking\_nc\_rf)}
+
+En los experimentos de grokking con el transformer algorítmico, la extracción es sutilmente diferente. El transformer (archivo \texttt{grokking\_nc\_rf/grok/transformer.py}) devuelve cuatro valores:
+
+\begin{lstlisting}
+def forward(self, x, pos=None, save_activations=False):
+    x = self.embed(x)
+    decoded, attentions, values = self.decoder(x, ...)
+    y_hat = self.linear(decoded)   # Proyeccion lineal a vocabulario
+    return y_hat, attentions, values, decoded
+\end{lstlisting}
+
+Aquí, \texttt{decoded} es la salida del decodificador \emph{antes} de la proyección lineal final (equivalente a \texttt{second\_last\_outputs}), con forma \texttt{[batch\_size, context\_len, d\_model]}. En el método \texttt{\_step()} de \texttt{training.py}, este tensor se transpone y se extraen solo las posiciones relevantes (lado derecho de la ecuación):
+
+\begin{lstlisting}
+y_hat, attentions, values, decoded_outputs = self(x, ...)
+decoded_outputs = decoded_outputs.transpose(-2, -1)
+# Extraer solo las posiciones RHS (despues del '=')
+decoded_outputs = decoded_outputs[..., eq_position + 1:]
+\end{lstlisting}
+
+Y luego se concatenan para formar la representación conjunta:
+\begin{lstlisting}
+concated_outputs = torch.cat(
+    (decoded_outputs[:,:,0], decoded_outputs[:,:,1]), dim=1)
+hessian_second = torch.sum(
+    torch.mul(concated_outputs, concated_outputs), dim=1)
+\end{lstlisting}
+
+Esta concatenación de los dos tokens de salida (RHS) produce una representación de dimensión $2 \times d\_model$ que se utiliza tanto para el cálculo de sharpness como para el cómputo de NCC.
+
+\subsection{Resumen comparativo}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{3.5cm} p{4cm} p{3cm} p{3cm}}
+\hline\hline
+\textbf{Arquitectura} & \textbf{Variable embedding} & \textbf{Dimensión} & \textbf{Uso en NCC} \\
+\hline
+ResNet-18 (nc\_exp) & \texttt{second\_last\_outputs} & 512 & \texttt{compute\_cluster} directo \\
+ResNet-18 (rf\_resnet) & \texttt{second\_last\_outputs} & 512 & \texttt{compute\_cluster} directo \\
+Transformer (grokking) & \texttt{decoded\_outputs} concat & $2\times d\_model$ & Tras concatenación temporal \\
+\hline\hline
+\end{tabular}
+\caption{Extracción de embeddings en las distintas arquitecturas del repositorio.}
+\label{tab:embedding_extraction}
+\end{table}
+
+% =========================================================================
+\chapter{La Métrica NCC}
+\label{chap:ncc}
+% =========================================================================
+
+\section{Definición formal}
+
+La métrica \textbf{NCC} (Neural Collapse Clustering) cuantifica el grado de colapso neural en el espacio de representaciones. Se define como:
+
+\begin{equation}
+    \NCC = \frac{1}{K(K-1)} \sum_{c_1=1}^K \sum_{\substack{c_2=1 \\ c_2 \neq c_1}}^K
+    \frac{\sigma_{c_1}^2 + \sigma_{c_2}^2}{2 \,\norm{\mu_{c_1} - \mu_{c_2}}^2},
+\end{equation}
+donde $K$ es el número de clases, $\mu_c \in \R^p$ es la media de las representaciones de la clase $c$, y $\sigma_c^2$ es la varianza intra-clase escalar:
+
+\begin{equation}
+    \mu_c = \frac{1}{n_c} \sum_{i=1}^{n_c} h_i^{(c)}, \qquad
+    \sigma_c^2 = \frac{1}{n_c} \sum_{i=1}^{n_c} \norm{h_i^{(c)} - \mu_c}^2.
+\end{equation}
+
+\section{Interpretación geométrica}
+
+La métrica NCC se puede interpretar como un cociente entre la varianza intra-clase promedio y la distancia entre medias al cuadrado:
+
+\begin{itemize}
+    \item \textbf{NCC $= 0$}: Colapso perfecto. Toda la varianza intra-clase es cero ($\sigma_c^2 = 0$ para toda $c$), lo que implica NC1.
+    \item \textbf{NCC $\ll 1$}: Colapso fuerte. Las clases forman clusters densos y bien separados.
+    \item \textbf{NCC $\approx 1$}: Las varianzas intra-clase son comparables a las distancias entre clases. Los clusters se solapan significativamente.
+    \item \textbf{NCC $> 1$}: La dispersión intra-clase es mayor que la separación entre clases. Las representaciones están entremezcladas.
+\end{itemize}
+
+Nótese que NCC captura exclusivamente las propiedades NC1 (varianza intra-clase) y una forma relajada de NC2 (distancia entre medias). No mide directamente la estructura angular (ETF) ni la autoduallidad (NC3). Es una métrica agregada que promedia sobre todos los pares de clases.
+
+\section{Implementación en el código}
+
+La implementación se encuentra en \texttt{compute\_cluster()} en \texttt{nc\_experiments/training\_utils.py}:
+
+\begin{lstlisting}
+def compute_cluster(train_repr, y_predict_train):
+    # 1. Agrupar representaciones por clase
+    class_dict = {key: [] for key in torch.unique(y_predict_train)}
+    for sub_repr, sub_y in zip(train_repr, y_predict_train):
+        class_dict[sub_y.tolist()].append(sub_repr)
+
+    # 2. Calcular media y varianza intra-clase
+    mean_var_batch_dict = {}
+    for key, value in class_dict.items():
+        temp_mean = torch.mean(torch.stack(value), dim=0)
+        temp_var = torch.mean(torch.stack([
+            torch.linalg.norm(f - temp_mean) ** 2 for f in value]))
+        mean_var_batch_dict[key] = [temp_mean, temp_var]
+
+    # 3. Calcular NCC sobre todos los pares de clases
+    all_train_cdnvs = []
+    for c1 in class_dict.keys():
+        for c2 in class_dict.keys():
+            if c2 == c1:  continue
+            mu1, var1 = mean_var_batch_dict[c1]
+            mu2, var2 = mean_var_batch_dict[c2]
+            temp_result = (var1 + var2) / \
+                (2 * torch.linalg.norm(mu1 - mu2) ** 2)
+            all_train_cdnvs.append(temp_result)
+
+    return torch.mean(torch.stack(all_train_cdnvs))
+\end{lstlisting}
+
+\subsection{Detalles técnicos importantes}
+
+\begin{enumerate}
+    \item \textbf{Varianza escalar, no matricial}. En lugar de calcular la matriz de covarianza $\Sigma_W^{(c)} \in \R^{p \times p}$, se usa la traza de dicha matriz: $\sigma_c^2 = \tr(\Sigma_W^{(c)}) = \frac{1}{n_c}\sum_i \norm{h_i^{(c)} - \mu_c}^2$. Esto es computacionalmente eficiente pero ignora las correlaciones entre dimensiones.
+
+    \item \textbf{Distancia euclidiana al cuadrado}. El denominador usa $\norm{\mu_{c_1} - \mu_{c_2}}^2$, que es la distancia euclidiana al cuadrado entre medias. Esto conecta directamente con la separabilidad lineal.
+
+    \item \textbf{Promedio sobre pares}. El valor final es el promedio sobre todos los $K(K-1)$ pares ordenados de clases distintas. Esto da igual peso a todos los pares, independientemente del tamaño de las clases.
+\end{enumerate}
+
+\section{Relación con otras métricas de colapso}
+
+Existen otras métricas en la literatura que cuantifican aspectos complementarios:
+
+\begin{itemize}
+    \item \textbf{WHI (Within-class Hessian Invariant)}: $\tr(\Sigma_W^{(c)} \Sigma_{B}^{-1})$, donde $\Sigma_B$ es la matriz de covarianza entre clases. Esta métrica es más sensible a la estructura de baja dimensionalidad.
+
+    \item \textbf{Norma del ETF}: $\norm{\tilde{M}^\top \tilde{M} - \tfrac{1}{K-1}(\I_K - \tfrac{1}{K}\mathbf{1}\mathbf{1}^\top)}_F$, que mide cuán cerca están las medias de clase normalizadas de formar un ETF perfecto.
+
+    \item \textbf{Ángulo promedio entre clasificador y media}: $\frac{1}{K}\sum_c \cos\!\big(\hat{W}_c, \hat{\mu}_c\big)$, que mide NC3.
+\end{itemize}
+
+La métrica NCC es menos sensible a la estructura geométrica fina (angulaciones) pero captura eficazmente la compactación intra-clase y la separación entre clases, que son los aspectos más directamente relacionados con la facilidad de clasificación.
+
+% =========================================================================
+\chapter{Efecto de la Penalización NCC sobre las Representaciones}
+\label{chap:efecto}
+% =========================================================================
+
+\section{Formulación de la función de pérdida}
+
+La función de pérdida utilizada en los experimentos con penalización NCC es:
+
+\begin{equation}
+    \mathcal{L} = \underbrace{\CE(y, \hat{y})}_{\text{cross-entropy}} \;-\; \lambda \cdot \underbrace{\NCC(h)}_{\text{cluster metric}},
+\label{eq:loss_ncc}
+\end{equation}
+
+donde $\CE(y, \hat{y})$ es la entropía cruzada estándar, $\lambda > 0$ es un hiperparámetro que controla la fuerza de la penalización, y el signo negativo delante de $\lambda\NCC$ significa que estamos \emph{maximizando} (penalizando negativamente) el valor de NCC. Esto es, literalmente:
+
+\begin{equation}
+    \mathcal{L} = \CE(y, \hat{y}) \;-\; \lambda \cdot \overline{\left(\frac{\sigma_{c_1}^2 + \sigma_{c_2}^2}{2\norm{\mu_{c_1} - \mu_{c_2}}^2}\right)}_{c_1 \neq c_2}.
+\label{eq:loss_ncc_expanded}
+\end{equation}
+
+\begin{remark}
+El signo negativo es crítico. Mientras que el entrenamiento estándar minimiza implícitamente NCC (porque la CE promueve que las representaciones se colapsen a puntos bien separados~\cite{papyan2020prevalence}), aquí se fuerza explícitamente la dirección opuesta: el gradiente empuja a \emph{incrementar} NCC.
+\end{remark}
+
+\section{Análisis del gradiente inducido}
+
+Para entender el efecto de la penalización, analicemos el gradiente de $\NCC$ con respecto a las representaciones. Sea $h_i^{(c)}$ la representación del $i$-ésimo ejemplo de la clase $c$. La contribución de este punto a NCC viene dada por:
+
+\begin{equation}
+    \NCC = \frac{1}{K(K-1)} \sum_{c_1} \sum_{c_2 \neq c_1}
+    \frac{\frac{1}{n_{c_1}}\sum_{i}\norm{h_i^{(c_1)} - \mu_{c_1}}^2 + \frac{1}{n_{c_2}}\sum_{j}\norm{h_j^{(c_2)} - \mu_{c_2}}^2}
+    {2 \norm{\mu_{c_1} - \mu_{c_2}}^2}.
+\end{equation}
+
+Derivando respecto a una representación específica $h_k^{(c)}$ obtenemos:
+
+\begin{align}
+    \frac{\partial \NCC}{\partial h_k^{(c)}} &=
+    \frac{1}{K(K-1)} \sum_{c' \neq c} \Bigg[
+    \underbrace{\frac{2\,(h_k^{(c)} - \mu_c)}{n_c \cdot 2 \norm{\mu_c - \mu_{c'}}^2}}_{\text{efecto en varianza}}
+    -
+    \underbrace{\frac{2\,(\mu_c - \mu_{c'})\,(\sigma_c^2 + \sigma_{c'}^2)}{n_c \cdot \big(2 \norm{\mu_c - \mu_{c'}}^2\big)^2}}_{\text{efecto en distancia}}
+    \Bigg].
+    \label{eq:grad_ncc}
+\end{align}
+
+\subsection{Interpretación de las componentes del gradiente}
+
+La ecuación~\eqref{eq:grad_ncc} revela dos efectos contrapuestos:
+
+\begin{enumerate}
+    \item \textbf{Término de varianza} (primera suma): Empuja a $h_k^{(c)}$ a \emph{alejarse} de la media de su clase $\mu_c$. Esto incrementa la varianza intra-clase y, por tanto, NCC.
+
+    \item \textbf{Término de distancia} (segunda suma): Empuja a $h_k^{(c)}$ en la dirección que \emph{reduce} la distancia entre $\mu_c$ y $\mu_{c'}$, lo que también incrementa NCC. Sin embargo, este término escala con $(\sigma_c^2 + \sigma_{c'}^2)$: cuando las varianzas son pequeñas, domina el primer término.
+
+    \item \textbf{Efecto neto}: La penalización $-\lambda\NCC$ en la pérdida total implica que el gradiente total incluye $-\lambda \cdot \partial\NCC/\partial h_k^{(c)}$, por lo que durante el descenso de gradiente, las representaciones son empujadas \emph{en dirección contraria} a la indicada por la ecuación~\eqref{eq:grad_ncc}.
+\end{enumerate}
+
+\section{Consecuencias observables}
+
+Dado que $\lambda > 0$ y el término es $-\lambda\NCC$, las fuerzas que actúan sobre las representaciones son:
+
+\begin{itemize}
+    \item \textbf{La entropía cruzada} empuja a las representaciones a formar clusters compactos y bien separados (NC1 y NC2) porque esto minimiza la pérdida de clasificación.
+
+    \item \textbf{La penalización NCC} invierte esta dinámica: empuja a \emph{aumentar} la varianza intra-clase y a \emph{reducir} la distancia entre medias. Esto deshace activamente el colapso neural.
+\end{itemize}
+
+En equilibrio, las representaciones alcanzan un estado donde ninguna de las dos fuerzas domina completamente. Las propiedades esperables son:
+
+\begin{enumerate}
+    \item \textbf{Aumento de $\sigma_c^2$}: La varianza intra-clase es significativamente mayor que en el entrenamiento estándar. Las representaciones de una misma clase no se colapsan a un punto, sino que se distribuyen en una región.
+
+    \item \textbf{Reducción de $\norm{\mu_{c_1} - \mu_{c_2}}$}: Las medias de clase están más cercanas entre sí que en el colapso tradicional.
+
+    \item \textbf{Mantenimiento de la precisión}: A pesar de esto, la precisión en test se mantiene alta porque la CE sigue siendo minimizada. El clasificador lineal aprende a separar regiones (no puntos) en el espacio de representación.
+
+    \item \textbf{No se observan NC1--NC4 completas}: Las propiedades de Neural Collapse clásico no se satisfacen.
+\end{enumerate}
+
+\section{Ejemplo sintético}
+
+Consideremos un caso simplificado con $K=2$ clases, $p=2$ dimensiones, $n_1=n_2=n$, y representaciones distribuidas isotrópicamente alrededor de cada media:
+
+\begin{align}
+    h_i^{(1)} &\sim \mathcal{N}(\mu_1, \sigma^2 I), \\
+    h_j^{(2)} &\sim \mathcal{N}(\mu_2, \sigma^2 I).
+\end{align}
+
+En este caso, el valor esperado de NCC es:
+
+\begin{equation}
+    \E[\NCC] = \frac{\sigma^2}{\norm{\mu_1 - \mu_2}^2}.
+\end{equation}
+
+La penalización $-\lambda\NCC$ fuerza a que $\sigma^2$ \emph{aumente} o $\norm{\mu_1 - \mu_2}^2$ \emph{disminuya} (o ambos). La CE, por su parte, requiere que los clusters sean separables. El conflicto se resuelve cuando las representaciones adoptan una estructura donde la superposición es controlada pero no nula, y el clasificador se adapta a esta nueva geometría.
+
+% =========================================================================
+\chapter{Hipótesis: Colapso Alternativo}
+\label{chap:alternativo}
+% =========================================================================
+
+Este capítulo constituye la contribución analítica central de este documento. Argumentamos que, si bien la penalización NCC rompe el colapso neural clásico, las representaciones no son caóticas ni carecen de estructura. Proponemos que emerge una \emph{forma alternativa de colapso} con propiedades geométricas distintas.
+
+\section{Marco conceptual}
+
+Definimos un \textbf{colapso alternativo} como cualquier configuración de las representaciones $h_i^{(c)} \in \mathcal{H} \subseteq \R^p$ que:
+
+\begin{enumerate}
+    \item Permite alta precisión en clasificación (a través de un clasificador lineal $\mathbf{W}$).
+    \item No satisface una o más de las propiedades NC1--NC4.
+    \item Exhibe alguna forma de estructura geométrica o topológica en el espacio de representación.
+\end{enumerate}
+
+Bajo la penalización $-\lambda\NCC$, la pérdida total se puede reescribir como un problema de optimización bi-objetivo:
+
+\begin{equation}
+    \min_{\theta} \; \CE(y, \hat{y}) \;+\; \lambda \cdot \underbrace{\left[-\NCC(h)\right]}_{\text{anti-colapso}},
+\label{eq:biobjective}
+\end{equation}
+
+que es equivalente a:
+
+\begin{equation}
+    \min_{\theta} \; -\frac{1}{N}\sum_{i=1}^N \log\frac{e^{W_{y_i}^\top h_i}}{\sum_c e^{W_c^\top h_i}} \;+\; \lambda \cdot \E_{c_1 \neq c_2}\!\left[-\frac{\sigma_{c_1}^2 + \sigma_{c_2}^2}{2\norm{\mu_{c_1} - \mu_{c_2}}^2}\right].
+\label{eq:loss_combined}
+\end{equation}
+
+Esta formulación revela que el aprendizaje busca simultáneamente: (a) maximizar la verosimilitud de las etiquetas, lo que favorece representaciones separables, y (b) minimizar el término anti-colapso, que desalienta la compactación intra-clase y la separación entre medias.
+
+\section{Hipótesis de Colapso por Subespacios (Subspace Collapse)}
+\label{sec:subspace}
+
+\begin{hypothesis}[Subspace Collapse]
+Bajo penalización NCC, las representaciones de cada clase no colapsan a un punto, sino a un subespacio afín de baja dimensión contenido en $\R^p$. Específicamente, existe una variedad lineal $\mathcal{M}_c \subset \R^p$ con $\dim(\mathcal{M}_c) \ll p$ tal que:
+\begin{equation}
+    \frac{1}{n_c}\sum_{i=1}^{n_c} \dist(h_i^{(c)}, \mathcal{M}_c)^2 \;\ll\; \frac{1}{n_c}\sum_{i=1}^{n_c} \norm{h_i^{(c)} - \mu_c}^2,
+\end{equation}
+donde $\dist(x, \mathcal{M}) = \min_{m \in \mathcal{M}} \norm{x - m}$.
+\end{hypothesis}
+
+\subsection{Justificación}
+
+La penalización NCC aumenta la varianza escalar $\sigma_c^2$, pero esto no implica necesariamente que la varianza sea isotrópica en todas las direcciones. Es posible que la varianza se concentre en unas pocas direcciones del espacio, mientras que en las direcciones ortogonales las representaciones permanezcan colapsadas. Formalmente, existe una descomposición:
+
+\begin{equation}
+    \Sigma_W^{(c)} = U_c \Lambda_c U_c^\top,
+\end{equation}
+donde $\Lambda_c = \diag(\lambda_1^{(c)}, \ldots, \lambda_p^{(c)})$ y solo un subconjunto reducido de autovalores $\lambda_j^{(c)}$ son significativos. La traza $\tr(\Sigma_W^{(c)}) = \sum_j \lambda_j^{(c)}$ puede ser grande, pero el rango efectivo $\rank_\epsilon(\Sigma_W^{(c)}) = \#\{j : \lambda_j^{(c)} > \epsilon\}$ puede ser pequeño.
+
+\subsection{Consecuencias}
+
+\begin{itemize}
+    \item El clasificador lineal $\mathbf{W}$ puede aprender pesos que ignoran las direcciones de alta varianza, proyectando las representaciones a un subespacio donde la separación es limpia.
+
+    \item Esto es consistente con el hecho de que la regularización de peso (weight decay) y el capping espectral (usados en rf\_resnet18) limitan la norma de $\mathbf{W}$, forzando al clasificador a usar solo las direcciones más informativas.
+
+    \item La estructura subespacial permitiría que $\NCC$ sea alto (por la varianza en las direcciones ignoradas) mientras la precisión de clasificación se mantiene alta.
+\end{itemize}
+
+\section{Hipótesis de Colapso Suave (Soft Collapse)}
+\label{sec:soft}
+
+\begin{hypothesis}[Soft Collapse]
+Las representaciones de cada clase no colapsan a puntos ni a subespacios rígidos, sino a regiones conectadas del espacio de representación. Las clases ocupan vecindades (manifolds) que son separables por un clasificador lineal aunque sus centros estén cercanos.
+\end{hypothesis}
+
+\subsection{Formalización}
+
+Sea $\mathcal{B}_c(\epsilon) = \{h \in \R^p : \dist(h, \mathcal{S}_c) < \epsilon\}$ la $\epsilon$-vecindad de un conjunto $\mathcal{S}_c$ (la «región» de la clase $c$). Decimos que hay colapso suave si:
+
+\begin{enumerate}
+    \item $\mathbb{P}(h_i^{(c)} \in \mathcal{B}_c(\epsilon)) \approx 1$ para algún $\epsilon$ finito (no necesariamente pequeño).
+    \item $\mathcal{B}_c(\epsilon) \cap \mathcal{B}_{c'}(\epsilon) = \varnothing$ para $c \neq c'$ (separabilidad).
+    \item $\frac{1}{n_c}\sum_i \norm{h_i^{(c)} - \mu_c}^2 > 0$ incluso en el límite $n_c \to \infty$ (no colapso a punto).
+\end{enumerate}
+
+\begin{remark}
+Esta hipótesis es una relajación de NC1: la varianza intra-clase no tiende a cero, pero las clases permanecen separables. Es análoga a tener conjuntos convexos disjuntos en el espacio de representación.
+\end{remark}
+
+\section{Hipótesis de Colapso Inducido por Kernel (Kernel-Induced Collapse)}
+\label{sec:kernel}
+
+\begin{hypothesis}[Kernel-Induced Collapse]
+La separabilidad entre clases en el espacio de representación $h \in \R^p$ no se debe a la geometría euclidiana de $h$, sino al \emph{kernel inducido por el clasificador lineal}. Específicamente, el producto escalar $\inner{W_c}{h}$ induce una métrica diferente en el espacio de representación que hace que las clases sean separables a pesar de que en la métrica euclidiana estándar estén mezcladas.
+\end{hypothesis}
+
+\subsection{Desarrollo}
+
+Consideremos la matriz de pesos del clasificador $W \in \R^{K \times p}$. La decisión de clasificación se toma como:
+
+\begin{equation}
+    \hat{y} = \arg\max_c \; \inner{W_c}{h} + b_c.
+\end{equation}
+
+Esto es equivalente a medir distancias en una geometría transformada. Definamos la transformación lineal $\phi_W: \R^p \to \R^K$ como $\phi_W(h) = Wh$. En el espacio de logits, la distancia entre la representación de un punto $h$ y la media de la clase $c$ es:
+
+\begin{equation}
+    \norm{\phi_W(h) - \phi_W(\mu_c)}^2_W = (h - \mu_c)^\top W^\top W (h - \mu_c).
+\end{equation}
+
+Bajo penalización NCC, $W$ puede aprender a «redefinir» la métrica del espacio de representación de manera que, aunque $\norm{\mu_{c_1} - \mu_{c_2}}^2$ sea pequeño en la métrica euclidiana, la distancia en la métrica de Mahalanobis inducida por $W$ sea grande:
+
+\begin{equation}
+    \norm{\mu_{c_1} - \mu_{c_2}}^2_W = (\mu_{c_1} - \mu_{c_2})^\top W^\top W (\mu_{c_1} - \mu_{c_2}) \gg \norm{\mu_{c_1} - \mu_{c_2}}^2.
+\end{equation}
+
+\begin{proposition}
+El clasificador lineal $W$ puede desacoplar la métrica de clasificación de la métrica euclidiana de las representaciones. La penalización NCC fuerza a que la separabilidad se «transfiera» de $h$ a $W$.
+\end{proposition}
+
+\section{Hipótesis de Colapso con Rango Constreñido (Rank-Constrained Collapse)}
+\label{sec:rank}
+
+\begin{hypothesis}[Rank-Constrained Collapse]
+El rango efectivo del conjunto de medias de clase $\{\mu_c\}_{c=1}^K$ está constreñido por la penalización NCC. En lugar de formar un ETF de rango $K-1$ (como en NC2), las medias ocupan un simplex de dimensión inferior $r < K-1$.
+\end{hypothesis}
+
+\subsection{Análisis}
+
+En NC2, la matriz de medias centradas $\tilde{M} = [\tilde{\mu}_1, \ldots, \tilde{\mu}_K] \in \R^{p \times K}$ tiene rango $K-1$ y satisface:
+
+\begin{equation}
+    \tilde{M}^\top \tilde{M} \propto I_K - \frac{1}{K}\mathbf{1}\mathbf{1}^\top.
+\end{equation}
+
+Bajo penalización NCC, el término $-\lambda \sigma_c^2/\norm{\mu_{c_1} - \mu_{c_2}}^2$ fuerza que $\norm{\mu_{c_1} - \mu_{c_2}}^2$ se reduzca. Esto puede lograrse si las medias de clase se confinan a un subespacio de dimensión reducida:
+
+\begin{equation}
+    \mu_c = V r_c + \mu_0, \quad \text{con } V \in \R^{p \times r}, \; r_c \in \R^r,
+\end{equation}
+
+donde $V$ es una matriz semi-ortogonal ($V^\top V = I_r$) y $\mu_0$ es un desplazamiento común. Las diferencias entre medias quedan restringidas al subespacio de columnas de $V$:
+
+\begin{equation}
+    \norm{\mu_{c_1} - \mu_{c_2}}^2 = \norm{r_{c_1} - r_{c_2}}^2,
+\end{equation}
+
+y si $r < K-1$, las medias no pueden formar un ETF completo.
+
+\begin{remark}
+Este escenario es compatible con las observaciones de que, en ausencia de colapso neural, las representaciones tienden a ocupar subespacios de menor dimensionalidad efectiva~\cite{papyan2020prevalence, zhu2021geometric}. La penalización NCC podría exacerbar esta tendencia.
+\end{remark}
+
+\section{Unificación: La pérdida como un tradeoff geométrico}
+
+Todas las hipótesis anteriores pueden entenderse como diferentes manifestaciones de un mismo principio: la función de pérdida~\eqref{eq:loss_combined} define un frente de Pareto entre dos objetivos geométricos en competencia.
+
+\begin{definition}[Frente de Pareto]
+Decimos que una configuración de representaciones $\{h_i^{(c)}\}$ es Pareto-óptima si no existe otra configuración que simultáneamente reduzca $\CE$ y reduzca $-\NCC$ (i.e., aumente $\NCC$). El conjunto de todas las configuraciones Pareto-óptimas forma el \emph{frente de Pareto}.
+\end{definition}
+
+En el límite $\lambda \to 0$, recuperamos el colapso neural clásico (NC). En el límite $\lambda \to \infty$, las representaciones maximizarían $\NCC$, potencialmente volviéndose caóticas (pero la CE dejaría de minimizarse). Para $\lambda$ finito y positivo, las representaciones se sitúan en algún punto intermedio del frente de Pareto.
+
+La Figura~\ref{fig:pareto} ilustra esquemáticamente este tradeoff.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=0.8]
+    \draw[->] (0,0) -- (6,0) node[right] {$\CE$};
+    \draw[->] (0,0) -- (0,5) node[above] {$-\NCC$};
+    \draw[thick, blue] (0.5,4.5) to[out=-60, in=150] (5.5,0.5);
+    \node[red, fill=red, circle, inner sep=2pt] at (0.8,3.8) {};
+    \node[left] at (0.8,3.8) {Colapso neural ($\lambda\approx0$)};
+    \node[red, fill=red, circle, inner sep=2pt] at (4.5,1.2) {};
+    \node[right] at (4.5,1.2) {Colapso alternativo ($\lambda>0$)};
+    \draw[dashed] (0.8,3.8) -- (0.8,0) node[below] {$\CE_\text{NC}$};
+    \draw[dashed] (0.8,3.8) -- (0,3.8) node[left] {$-\NCC_\text{NC}$};
+    \draw[dashed] (4.5,1.2) -- (4.5,0) node[below] {$\CE_\text{alt}$};
+    \draw[dashed] (4.5,1.2) -- (0,1.2) node[left] {$-\NCC_\text{alt}$};
+    \node[below] at (3,-0.5) {Frente de Pareto: $\min \CE + \lambda(-\NCC)$};
+\end{tikzpicture}
+\caption{Representación esquemática del frente de Pareto entre $\CE$ y $-\NCC$. El colapso neural clásico (punto rojo superior izquierdo) minimiza $\NCC$ a expensas de un $\CE$ bajo. El colapso alternativo (punto rojo inferior derecho) permite mayor $\NCC$ (menos colapso) mientras mantiene el $\CE$ competitivo.}
+\label{fig:pareto}
+\end{figure}
+
+\section{Evidencia empírica preliminar}
+
+El repositorio \texttt{grokking\_flatness} contiene evidencia que respalda la existencia de colapso alternativo:
+
+\begin{enumerate}
+    \item En los experimentos \texttt{nc\_experiments}, el modelo entrenado con $\lambda > 0$ generaliza bien a pesar de que NCC es significativamente mayor que en el caso sin regularización (ver paper original~\cite{han2025flatness}).
+
+    \item Las gráficas del paper muestran que, mientras la sharpness relativa (RF) correlaciona con la generalización, el NCC no muestra una correlación clara con la aparición del grokking.
+
+    \item En los transformers algorítmicos, los embeddings \texttt{decoded\_outputs} preservan estructura suficiente para que la proyección lineal aprenda a decodificar correctamente, incluso cuando NCC es alto.
+
+    \item El capping espectral y de Frobenius en \texttt{rf\_resnet18} limita la norma de $W$, lo que obliga al modelo a depender de la geometría de $h$ en lugar de adaptar $W$ arbitrariamente.
+\end{enumerate}
+
+% =========================================================================
+\chapter{Propuestas de Análisis}
+\label{chap:propuestas}
+% =========================================================================
+
+Para validar las hipótesis planteadas en el Capítulo~\ref{chap:alternativo}, proponemos un conjunto de análisis cuantitativos que podrían implementarse sobre los datos de representaciones ya generados en el repositorio.
+
+\section{Análisis de NCC por capas}
+
+\begin{hypothesis}[Colapso Temprano]
+Aunque NCC sea alto en la última capa (por efecto de la penalización), las capas intermedias podrían exhibir colapso neural clásico. La penalización solo afecta a la última representación, pero las capas anteriores podrían mantener estructura colapsada.
+\end{hypothesis}
+
+\textbf{Propuesta}: Extraer representaciones de todas las capas de la red (no solo la última) y calcular NCC en cada una. Idealmente, observaríamos una transición: NCC bajo en capas tempranas $\to$ NCC alto en la última capa penalizada.
+
+\begin{equation}
+    \NCC^{(\ell)} = \frac{1}{K(K-1)}\sum_{c_1 \neq c_2} \frac{\sigma_{c_1}^{2(\ell)} + \sigma_{c_2}^{2(\ell)}}{2\norm{\mu_{c_1}^{(\ell)} - \mu_{c_2}^{(\ell)}}^2},
+\end{equation}
+donde el superíndice $(\ell)$ indica la capa $\ell$-ésima.
+
+\section{Análisis de Componentes Principales (PCA) de las medias de clase}
+
+\begin{hypothesis}[Dimensionalidad Reducida]
+Bajo penalización NCC, las medias de clase $\mu_c$ ocupan un subespacio de dimensionalidad menor que $K-1$.
+\end{hypothesis}
+
+\textbf{Propuesta}: Realizar PCA sobre la matriz de medias centradas $\tilde{M} \in \R^{p \times K}$ y analizar el espectro de autovalores:
+
+\begin{equation}
+    S = \tilde{M}^\top \tilde{M}, \qquad \text{autovalores } \eta_1 \geq \eta_2 \geq \cdots \geq \eta_K.
+\end{equation}
+
+En NC2 puro, $\eta_1 = \eta_2 = \cdots = \eta_{K-1} > 0$ y $\eta_K = 0$, con la relación $\eta_i / \eta_1 = 1$ para $i \leq K-1$. Bajo colapso alternativo:
+
+\begin{itemize}
+    \item La caída espectral podría ser más rápida: $\eta_2 \ll \eta_1$.
+    \item El rango efectivo $r = \#\{i : \eta_i > \epsilon \eta_1\}$ podría ser menor que $K-1$.
+    \item La uniformidad $\eta_{K-1}/\eta_1$ se desvía del valor ideal 1.
+\end{itemize}
+
+Métricas concretas:
+
+\begin{equation}
+    \text{Rango efectivo} = \frac{(\sum_{i=1}^{K} \eta_i)^2}{\sum_{i=1}^{K} \eta_i^2} \quad \text{(participación)}
+\end{equation}
+\begin{equation}
+    \text{Uniformidad} = \frac{\eta_{K-1}}{\eta_1} \quad \text{(ideal: 1)}
+\end{equation}
+
+\section{Información Mutua entre Representación y Etiqueta}
+
+\begin{hypothesis}[Compresión de Información]
+La penalización NCC podría inducir una compresión de la información en las representaciones: la información mutua $\MI(h; y)$ entre la representación $h$ y la etiqueta $y$ se mantiene alta (necesaria para clasificación), pero la información $\MI(h; x)$ entre $h$ y la entrada $x$ se reduce (las representaciones retienen menos información posicional o de detalle).
+\end{hypothesis}
+
+\textbf{Propuesta}: Estimar la información mutua usando estimadores基于 kNN~\cite{kozachenko1987sample} o mediante histogramas adaptativos:
+
+\begin{align}
+    \MI(h; y) &= \mathbb{E}_{p(h,y)}\!\left[\log\frac{p(h,y)}{p(h)p(y)}\right], \\
+    \MI(h; x) &= \mathbb{E}_{p(h,x)}\!\left[\log\frac{p(h,x)}{p(h)p(x)}\right].
+\end{align}
+
+La hipótesis predice:
+\begin{equation}
+    \MI_{\text{penalizado}}(h; y) \approx \MI_{\text{estándar}}(h; y), \qquad
+    \MI_{\text{penalizado}}(h; x) < \MI_{\text{estándar}}(h; x).
+\end{equation}
+
+\section{Distancias geodésicas en el manifold de representaciones}
+
+\begin{hypothesis}[Geometría No Euclidiana]
+La estructura de las representaciones bajo penalización NCC es mejor capturada por distancias geodésicas (intrínsecas al manifold) que por distancias euclidianas. Las clases son separables geodésicamente aunque no lo sean euclidianamente.
+\end{hypothesis}
+
+\textbf{Propuesta}: Construir un grafo de vecinos más cercanos ($k$-NN) sobre el conjunto de representaciones $\{h_i\}_{i=1}^N$ y calcular la distancia geodésica $d_G(c_1, c_2)$ como el camino más corto en el grafo entre cualquier punto de la clase $c_1$ y cualquier punto de la clase $c_2$:
+
+\begin{equation}
+    d_G(c_1, c_2) = \min_{i: y_i=c_1} \min_{j: y_j=c_2} \text{dist}_{\text{grafo}}(h_i, h_j).
+\end{equation}
+
+Comparar $d_G$ con la distancia euclidiana $\norm{\mu_{c_1} - \mu_{c_2}}$. La hipótesis predice que la relación $d_G / \norm{\mu_{c_1} - \mu_{c_2}}$ es mayor bajo penalización NCC (las clases están más «enrolladas» en el manifold).
+
+\section{Análisis de la matriz Gram de medias}
+
+\begin{hypothesis}[Estructura de ETF Deformada]
+La matriz Gram de las medias de clase normalizadas $G_{c_1 c_2} = \inner{\hat{\mu}_{c_1}}{\hat{\mu}_{c_2}}$, donde $\hat{\mu}_c = \mu_c / \norm{\mu_c}$, se desvía de la estructura de ETF ideal $G^{\text{ETF}} = \frac{1}{K-1}(\mathbf{1}\mathbf{1}^\top - I) + I$ de manera sistemática.
+\end{hypothesis}
+
+\textbf{Propuesta}: Calcular las métricas de desviación:
+
+\begin{equation}
+    \Delta_{\text{ETF}} = \norm{G - G^{\text{ETF}}}_F,
+\end{equation}
+\begin{equation}
+    \Delta_{\text{angular}} = \max_{c_1 \neq c_2} \abs{\inner{\hat{\mu}_{c_1}}{\hat{\mu}_{c_2}} - \left(-\frac{1}{K-1}\right)}.
+\end{equation}
+
+Si las medias colapsan a un subespacio de menor dimensión, los ángulos entre ellas se alejarán del valor ideal $-\frac{1}{K-1}$, tendiendo hacia ángulos más cercanos a 0 (menos ortogonalidad).
+
+\section{NCC local vs. global}
+
+\begin{hypothesis}[Colapso Local]
+Aunque el NCC global (promediado sobre todas las clases) sea alto, el NCC local (calculado solo sobre vecinos cercanos) podría ser bajo. Esto indicaría que las clases son localmente colapsadas pero globalmente dispersas.
+\end{hypothesis}
+
+\textbf{Propuesta}: Definir NCC local como:
+
+\begin{equation}
+    \NCC_{\text{local}} = \frac{1}{N}\sum_{i=1}^N \sum_{j \in \mathcal{N}_k(i)} \frac{\norm{h_i - \mu_{y_i}}^2 + \norm{h_j - \mu_{y_j}}^2}{2\norm{\mu_{y_i} - \mu_{y_j}}^2} \cdot \mathds{1}_{y_i \neq y_j},
+\end{equation}
+
+donde $\mathcal{N}_k(i)$ son los $k$ vecinos más cercanos de $h_i$. Si $\NCC_{\text{local}} \ll \NCC_{\text{global}}$, esto sugiere que la estructura local de vecindad está mejor organizada que la estructura global.
+
+\section{Análisis de la topología del espacio de representación}
+
+\begin{hypothesis}[Persistencia Homológica]
+La topología del espacio de representación (medida mediante homología persistente) cambia bajo penalización NCC. En particular, los componentes conectados y los agujeros en el espacio de representación se reorganizan.
+\end{hypothesis}
+
+\textbf{Propuesta}: Utilizar \emph{persistent homology} (herramientas como \texttt{Ripser} o \texttt{GUDHI}) para calcular los números de Betti $\beta_0, \beta_1, \beta_2$ del complejo de Čech o Vietoris-Rips construido sobre las representaciones. Comparar la persistencia de las características topológicas entre:
+
+\begin{itemize}
+    \item Modelo estándar ($\lambda=0$): se esperan $K$ componentes conectados claros ($\beta_0 = K$) que persisten para rangos de escala amplios.
+    \item Modelo penalizado ($\lambda>0$): los $K$ componentes podrían estar conectados por puentes de alta densidad ($\beta_0 < K$ para escalas pequeñas), indicando que las regiones de clase están topológicamente más cerca.
+\end{itemize}
+
+\section{Visualización mediante UMAP / t-SNE}
+
+Aunque cualitativo, la visualización de las representaciones mediante técnicas de reducción de dimensionalidad no lineal (UMAP~\cite{mcinnes2018umap}, t-SNE~\cite{van2008visualizing}) puede revelar patrones que las métricas agregadas no capturan.
+
+\textbf{Propuesta}: Proyectar las representaciones a 2D con UMAP y colorear por clase. Comparar las visualizaciones para:
+\begin{itemize}
+    \item $\lambda = 0$: Clusters densos y separados (NC1 visual).
+    \item $\lambda > 0$: Clusters más difusos pero aún separables, posiblemente con estructura elongada o en forma de «cinta».
+
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{4cm} p{4cm} p{4cm}}
+\hline\hline
+\textbf{Métrica} & \textbf{$\lambda=0$ (NC)} & \textbf{$\lambda>0$ (Alt)} \\
+\hline
+NCC & $\approx 0$ & $> 0$ \\
+$\sigma_c^2$ & $\to 0$ & $> 0$ \\
+$\norm{\mu_{c_1} - \mu_{c_2}}$ & grande & reducido \\
+Rango efectivo de medias & $K-1$ & $r < K-1$ \\
+$\Delta_{\text{ETF}}$ & $\approx 0$ & $> 0$ \\
+$\MI(h; y)$ & alta & alta \\
+$\MI(h; x)$ & alta & reducida \\
+$\beta_0$ persistente & $K$ & $< K$ \\
+\hline\hline
+\end{tabular}
+\caption{Resumen de las predicciones de las métricas bajo colapso neural estándar vs. colapso alternativo.}
+\label{tab:metric_predictions}
+\end{table}
+
+% =========================================================================
+\chapter{Conclusiones}
+\label{chap:conclusiones}
+% =========================================================================
+
+\section{Síntesis de los hallazgos}
+
+El análisis presentado en este documento revela que la penalización explícita de Neural Collapse mediante el término $-\lambda\NCC$ en la función de pérdida produce un efecto profundo y sistemático en la geometría de las representaciones latentes. Las conclusiones principales son:
+
+\begin{enumerate}
+    \item \textbf{NC no es necesario para generalizar}. Como demuestran Han et al.~\cite{han2025flatness}, los modelos entrenados con penalización NCC generalizan bien aunque las propiedades NC1--NC4 no se satisfagan. Esto establece que Neural Collapse es una condición \emph{suficiente} pero \emph{no necesaria} para la generalización.
+
+    \item \textbf{La penalización NCC induce un conflicto geométrico}. La pérdida $\CE - \lambda\NCC$ enfrenta dos fuerzas opuestas: la entropía cruzada favorece el colapso (clusters compactos y separados), mientras que la penalización NCC lo deshace. Las representaciones resultantes son un compromiso entre ambos objetivos.
+
+    \item \textbf{Emergen formas alternativas de colapso}. Proponemos que, lejos de ser caóticas, las representaciones bajo penalización NCC adoptan estructuras alternativas:
+    \begin{itemize}
+        \item \textbf{Subspace Collapse}: la varianza intra-clase se concentra en unas pocas direcciones.
+        \item \textbf{Soft Collapse}: las clases ocupan regiones separables aunque no colapsen a puntos.
+        \item \textbf{Kernel-Induced Collapse}: el clasificador redefine la métrica de separación.
+        \item \textbf{Rank-Constrained Collapse}: las medias ocupan un simplex de dimensión reducida.
+    \end{itemize}
+
+    \item \textbf{El clasificador lineal se adapta a la nueva geometría}. El aprendizaje de $\mathbf{W}$ se acopla a la geometría de $h$ de manera que la separabilidad se mantiene incluso cuando las representaciones no están colapsadas. Las técnicas de capping espectral y de Frobenius en \texttt{rf\_resnet18} modulan aún más este acoplamiento.
+\end{enumerate}
+
+\section{Hacia una teoría unificada}
+
+Proponemos el término \textbf{«Colapso Geométrico»} (\emph{Geometric Collapse}) para referirnos a la familia de configuraciones de representaciones que permiten alta precisión de clasificación sin satisfacer Neural Collapse clásico. Esta noción más amplia incluye tanto el colapso neural tradicional como las formas alternativas descritas aquí.
+
+El colapso geométrico se caracterizaría por:
+\begin{equation}
+    \lim_{n_c \to \infty} \frac{1}{n_c}\sum_{i=1}^{n_c} \ell\!\left(h_i^{(c)}, \mu_c, \{\mu_{c'}\}_{c' \neq c}, \mathbf{W}\right) = \epsilon \geq 0,
+\end{equation}
+donde $\ell$ es una función de pérdida que mide la «calidad de la representación» y $\epsilon$ es una cota inferior que puede ser cero (NC) o positiva (colapso alternativo).
+
+\subsection{Trabajo futuro}
+
+Los análisis propuestos en el Capítulo~\ref{chap:propuestas} permitirían validar empíricamente las hipótesis aquí planteadas. En particular, recomendamos:
+
+\begin{enumerate}
+    \item Implementar el cálculo de NCC por capas para determinar si el colapso alternativo es un fenómeno de la última capa o afecta a toda la red.
+
+    \item Realizar PCA y SVD de las medias de clase para cuantificar la dimensionalidad efectiva del espacio de representaciones bajo distintos valores de $\lambda$.
+
+    \item Calcular la información mutua $\MI(h; y)$ y $\MI(h; x)$ para entender el tradeoff de compresión.
+
+    \item Explorar métodos de topología persistente (TDA) para caracterizar la estructura global del espacio de representación.
+
+    \item Investigar si las conclusiones se extienden a arquitecturas más grandes (ViT, GPT-2) y otros dominios (NLP, visión).
+\end{enumerate}
+
+\section{Reflexión final}
+
+La clave conceptual de este trabajo es que la relación entre representaciones y generalización es más sutil que «a más colapso, mejor generalización». El colapso neural es una manifestación de la minimización de la entropía cruzada en el régimen de sobreparametrización, pero no es la \emph{única} configuración geométrica que permite generalizar.
+
+La penalización NCC revela que las redes neuronales tienen una plasticidad geométrica considerable: pueden encontrar configuraciones de representaciones muy diferentes de las clásicas y, sin embargo, igual de efectivas para la clasificación. Esto sugiere que la generalización depende más de propiedades de regularidad (como la suavidad del clasificador o la geometría del espacio de representación a nivel de manifold) que de la compacidad de los clusters.
+
+En palabras de Han et al.: \textit{«Flatness is necessary; Neural Collapse is not».} Nuestro análisis complementa esta conclusión al preguntar: \textit{«¿Qué forma geométrica toman las representaciones cuando Neural Collapse no ocurre?»} La respuesta, que hemos esbozado aquí, apunta a un rico paisaje de estructuras alternativas que merecen ser exploradas en profundidad.
+
+% =========================================================================
+\appendix
+\chapter{Detalles de Implementación en el Código}
+\label{app:code}
+% =========================================================================
+
+\section{Cálculo de Sharpness}
+
+En los experimentos de \texttt{nc\_experiments} y \texttt{rf\_resnet18}, la sharpness se calcula como:
+
+\begin{equation}
+    \text{Sharpness} = \norm{W}_2 \cdot \sum_{j} \left[\sum_{c} p_c(1-p_c)\right]_j \cdot \norm{h_j}^2,
+\end{equation}
+
+donde $W$ son los pesos del clasificador, $p_c = \text{softmax}(z)_c$ con $z = Wh + b$, y $h_j$ es la representación del $j$-ésimo ejemplo en el batch.
+
+El código correspondiente es:
+
+\begin{lstlisting}
+probs = torch.softmax(outputs, dim=1)
+hessian_first = torch.sum(torch.mul(probs, 1 - probs), dim=1)
+hessian_second = torch.sum(torch.mul(second_last_outputs, second_last_outputs), dim=1)
+hessian = torch.mul(hessian_first, hessian_second)
+weights_norm = torch.linalg.norm(model.fc.weight)
+sharpness = weights_norm * hessian
+sharpness2 = weights_norm * weights_norm * hessian
+\end{lstlisting}
+
+\section{Variantes de regularización en rf\_resnet18}
+
+El archivo \texttt{rf\_resnet18/training\_utils.py} incluye múltiples variantes de la pérdida:
+
+\begin{itemize}
+    \item \texttt{loss\_type1}: $\mathcal{L} = \CE - \lambda \cdot \overline{\text{sharpness}^2}$ (penalización de sharpness estándar).
+    \item \texttt{loss\_type2}: $\mathcal{L} = \CE - \lambda \cdot \frac{\abs{\overline{\text{sharpness}^2}}}{\abs{\CE} + \epsilon}$ (penalización normalizada).
+    \item \texttt{loss\_ortho}: Añade un término de ortonormalidad: $+\rho \cdot \norm{WW^\top - I}_F^2$.
+    \item \texttt{use\_pow}: Penalización NCC en lugar de sharpness: $\mathcal{L} = \CE - \lambda \cdot \NCC$.
+\end{itemize}
+
+\section{Extracción de representaciones en ViT y BERT}
+
+Para ViT, las representaciones se extraen de manera análoga a ResNet, tomando la salida anterior a la cabeza de clasificación. Para BERT (en \texttt{rf\_bert/bert\_sst5.py}) y GPT-2 (en \texttt{rf\_gpt2/gpt\_sst5.py}), se utiliza el token \texttt{[CLS]} (para BERT) o la última capa oculta promediada (para GPT-2) como representación, antes de la proyección lineal final.
+
+% =========================================================================
+\bibliographystyle{plain}
+\bibliography{references}
+% =========================================================================
+
+\begin{thebibliography}{99}
+
+\bibitem{papyan2020prevalence}
+V. Papyan, X. Y. Han, and D. L. Donoho.
+\emph{Prevalence of neural collapse during the terminal phase of deep learning training}.
+Proceedings of the National Academy of Sciences, 117(40):24652--24663, 2020.
+
+\bibitem{han2025flatness}
+T. Han, L. Adilova, H. Petzka, J. Kleesiek, and M. Kamp.
+\emph{Flatness is Necessary, Neural Collapse is Not: Rethinking Generalization via Grokking}.
+NeurIPS 2025.
+
+\bibitem{zhu2021geometric}
+Z. Zhu, T. Ding, J. Zhou, X. Li, C. You, J. Sulam, and Q. Qu.
+\emph{A geometric analysis of neural collapse with unconstrained features}.
+NeurIPS 2021.
+
+\bibitem{kozachenko1987sample}
+L. F. Kozachenko and N. N. Leonenko.
+\emph{Sample estimate of the entropy of a random vector}.
+Problems of Information Transmission, 23(2):95--101, 1987.
+
+\bibitem{mcinnes2018umap}
+L. McInnes, J. Healy, and J. Melville.
+\emph{UMAP: Uniform Manifold Approximation and Projection for Dimension Reduction}.
+arXiv:1802.03426, 2018.
+
+\bibitem{van2008visualizing}
+L. van der Maaten and G. Hinton.
+\emph{Visualizing data using t-SNE}.
+Journal of Machine Learning Research, 9:2579--2605, 2008.
+
+\end{thebibliography}
+
+\end{document}

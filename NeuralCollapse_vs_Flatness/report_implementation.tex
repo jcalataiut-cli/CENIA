@@ -1,0 +1,562 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{bbm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+
+% lstlisting style
+\lstset{
+    basicstyle=\small\ttfamily,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numbersep=5pt,
+    backgroundcolor=\color{gray!5},
+    tabsize=4,
+    language=Python,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red!70!black},
+    commentstyle=\color{green!40!black},
+    morekeywords={self,class,def,return,if,else,for,while,with,from,import,as,None,True,False}
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    citecolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textbf{Grokking Flatness} -- Implementation Report}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+
+\title{\vspace{-1.5cm}\textbf{Implementation Report}\\[3mm]
+\large Neural Collapse \& Relative Flatness in Deep Learning Generalization\\
+\small\texttt{github.com/TrustworthyMachineLearning-Lab/grokking\_flatness}}
+\author{}
+\date{\vspace{-5mm}}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report documents the implementation of the codebase accompanying the NeurIPS~2025 paper
+\emph{``Flatness is Necessary, Neural Collapse is Not: Rethinking Generalization via Grokking''}.
+The repository investigates the roles of \textbf{Neural Collapse (NC)} and \textbf{Relative Flatness}
+in deep learning generalization, leveraging the grokking phenomenon as a controlled testbed.
+We describe the architecture, core modules, metric computations, experiment pipelines, and
+reproducibility details for all six experiment families.
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+%=============================================================================
+\section{Project Overview}
+%=============================================================================
+
+The codebase (\texttt{grokking\_flatness}) empirically tests two central claims:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Neural Collapse is not necessary} for generalization --- generalization can occur without
+          the collapse of class means to the vertices of a simplex equiangular tight frame (ETF).
+    \item \textbf{Relative Flatness is potentially necessary} for generalization --- the phase transition
+          from memorization to generalization in grokking coincides with a sharp drop in the
+          sharpness measure.
+    \item Neural Collapse \emph{provably leads to} Relative Flatness under classical assumptions,
+          establishing a theoretical link between the two phenomena.
+\end{enumerate}
+
+The repository contains six self-contained experiment directories plus a shared library
+for the grokking testbed, as summarised in Table~\ref{tab:dirs}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcl}
+\toprule
+\textbf{Directory} & \textbf{Purpose} & \textbf{Figures} \\
+\midrule
+\texttt{grokking\_nc\_rf/} & Grokking testbed: NC \& flatness metrics & Fig.~1 \\
+\texttt{nc\_experiments/}   & Neural Collapse clustering experiments  & Fig.~2 \\
+\texttt{rf\_resnet18/}      & Relative Flatness on ResNet-18          & Fig.~4 \\
+\texttt{rf\_vit/}           & Relative Flatness on Vision Transformer & Fig.~4 \\
+\texttt{rf\_bert/}          & Relative Flatness on BERT               & Figs.~16,17 \\
+\texttt{rf\_gpt2/}          & Relative Flatness on GPT-2              & Figs.~18,19 \\
+\bottomrule
+\end{tabular}
+\caption{Experiment directories and their corresponding paper figures.}
+\label{tab:dirs}
+\end{table}
+
+\subsection*{Dependencies}
+
+\begin{itemize}[leftmargin=*]
+    \item \texttt{PyTorch 2.4.1, torchvision 0.19.1, timm 1.0.15}
+    \item \texttt{pytorch-lightning 1.2.10} (grokking experiments only)
+    \item \texttt{scikit-learn 1.3.2, numpy, matplotlib, scipy, tqdm}
+    \item \texttt{transformers, datasets} (BERT / GPT-2 experiments)
+    \item \texttt{mod} (modular arithmetic), \texttt{blobfile}, \texttt{sympy}
+\end{itemize}
+
+%=============================================================================
+\section{Core Library: \texttt{grok/}}
+%=============================================================================
+
+The \texttt{grokking\_nc\_rf/grok/} package is the central shared library, implementing
+the grokking setup from Power~et~al.~(2022)~\cite{power2022grokking} with extensions for
+neural collapse and flatness measurement.
+
+\subsection{Data Module (\texttt{data.py})}
+
+Generates algorithmic datasets for modular arithmetic and permutation groups.
+
+\begin{description}[leftmargin=*]
+    \item[\texttt{ArithmeticTokenizer}] Maps token strings to integer IDs. Supports operators
+          listed in \texttt{VALID\_OPERATORS} (addition, subtraction, multiplication, division,
+          polynomial forms over $\mathbb{Z}_{97}$, symmetric group $S_5$, list operations).
+    \item[\texttt{ArithmeticDataset}] Produces training/validation splits controlled by
+          \texttt{train\_data\_pct} and \texttt{actual\_train\_data\_pct}. The ``grokking gap''
+          is created by making \texttt{actual\_train\_data\_pct} $<$ \texttt{train\_data\_pct},
+          so the model sees only a subset of the training equations per epoch, delaying generalization.
+    \item[\texttt{ArithmeticIterator}] Batched PyTorch \texttt{IterableDataset} with configurable
+          batch size, device placement, and shuffling.
+\end{description}
+
+\subsection{Transformer Architecture (\texttt{transformer.py})}
+
+A decoder-only transformer with noise-injection capabilities:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Noisy layers}: \texttt{Linear}, \texttt{LayerNorm}, and \texttt{Embedding} support
+          \texttt{weight\_noise} --- additive Gaussian noise with variance $\sigma^2$ applied during
+          training. This is a key knob for controlling the sharpness of the loss landscape.
+    \item \textbf{Attention}: Single-head (\texttt{AttentionHead}) and multi-head
+          (\texttt{MultiHeadAttention}) with causal masking, scaled dot-product attention.
+    \item \textbf{Feed-forward}: Two-layer MLP with ReLU/GELU non-linearity and dropout.
+    \item \textbf{Decoder block}: Pre-norm residual stream: $\text{LayerNorm}(x + \text{Attn}(x))$
+          followed by $\text{LayerNorm}(x + \text{FFN}(x))$.
+    \item \textbf{Positional encoding}: Sinusoidal fixed embeddings.
+    \item \textbf{Output head}: Linear projection to vocabulary size.
+\end{itemize}
+
+Default configuration: 2~layers, 4~heads, embedding dimension~128, context length~50.
+
+\subsection{Training Loop (\texttt{training.py})}
+
+The \texttt{TrainableTransformer} class extends \texttt{LightningModule} from PyTorch Lightning.
+
+\subsubsection*{Key Hyper-parameters}
+\begin{itemize}[leftmargin=*]
+    \item \texttt{batchsize}, \texttt{n\_layers}, \texttt{n\_heads}, \texttt{d\_model}, \texttt{dropout}
+    \item \texttt{weight\_noise}: standard deviation of injected parameter noise
+    \item \texttt{math\_operator}: arithmetic operation (e.g., `+', `-', `*')
+    \item \texttt{train\_data\_pct}, \texttt{actual\_train\_data\_pct}: control grokking gap
+    \item \texttt{max\_lr}, \texttt{anneal\_lr}: cosine annealing with linear warmup
+    \item \texttt{weight\_decay\_kind}: \texttt{to\_zero}, \texttt{to\_init}, \texttt{jiggle}, \texttt{honest}
+    \item \texttt{opt\_type}: \texttt{AdamW} (custom implementation) or \texttt{SGD}
+    \item \texttt{use\_rglr}, \texttt{reg\_step}, \texttt{hessian\_coeff}: optional sharpness-based regularization
+\end{itemize}
+
+\subsubsection*{Custom Optimizers}
+\begin{itemize}[leftmargin=*]
+    \item \texttt{CustomAdamW}: AdamW with multiple weight-decay forms --- decaying toward zero, toward
+          initialization, or with multiplicative log-normal ``jiggle'' noise. Also supports adding
+          uniform Gaussian noise to updates (`noise\_factor`).
+    \item \texttt{SAM}: Sharpness-Aware Minimization (Foret~et~al.~2020) two-step optimizer.
+\end{itemize}
+
+\subsubsection*{Sharpness \& Hessian Computation (inline)}
+During both training and validation, the model computes per-sample sharpness:
+
+\begin{align}
+    \mathbf{p}_i &= \text{softmax}(\mathbf{z}_i) \nonumber\\
+    H_i^{(1)} &= \sum_{k=1}^K p_{i,k}(1 - p_{i,k}) \label{eq:hessian_first}\\
+    H_i^{(2)} &= \|\phi_i\|_2^2 \label{eq:hessian_second}\\
+    \mathcal{H}_i &= H_i^{(1)} \cdot H_i^{(2)} \label{eq:hessian}\\
+    S_i^{(1)} &= \|W_{\text{out}}\|_2 \cdot \mathcal{H}_i \label{eq:sharpness1}\\
+    S_i^{(2)} &= \|W_{\text{out}}\|_2^2 \cdot \mathcal{H}_i \label{eq:sharpness2}
+\end{align}
+
+where $\phi_i$ are the penultimate-layer representations and $W_{\text{out}}$ is the final linear
+classifier weight matrix. These are computed with \texttt{torch.no\_grad()} and stored per-epoch
+for both train and validation sets.
+
+\subsection{Metrics Module (\texttt{metrics.py})}
+
+Implements norm-based generalization measures from Neyshabur~et~al.~\cite{neyshabur2015towards}
+and Bartlett~et~al.~\cite{bartlett2017spectrally}.
+
+\begin{description}[leftmargin=*]
+    \item[\texttt{compute\_measure}] Recursively aggregates per-layer measures over all
+          \texttt{nn.Linear} modules using operators \texttt{log\_product}, \texttt{sum}, \texttt{max},
+          \texttt{product}, \texttt{norm}.
+    \item[\texttt{norm}] $L_{p,q}$ norm of weight matrix: $(\sum_j (\sum_i |W_{ij}|^p)^{q/p})^{1/q}$.
+    \item[\texttt{op\_norm}] Spectral norm (largest singular value) via SVD, or $p$-Schatten norm.
+    \item[\texttt{dist}] $L_{p,q}$ distance from initialization.
+    \item[\texttt{h\_dist}] Hidden-unit normalized distance: $h^{1-1/q} \cdot \text{dist}$.
+    \item[\texttt{h\_dist\_op\_norm}] Ratio $\text{h\_dist} / \text{op\_norm}$.
+\end{description}
+
+The \texttt{calculate()} function returns a dict of measures and generalization bounds:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Measures}: $L_{1,\infty}$, Frobenius, $L_{3,1.5}$, Spectral, $L_{1.5}$ operator, Trace norms.
+    \item \textbf{Bounds}: L1-Max Bound (Bartlett~2002), Frobenius Bound (Neyshabur~2015),
+          $L_{3,1.5}$ Bound, Spectral $L_{2,1}$ Bound (Bartlett~2017), Spectral-Frobenius Bound (Neyshabur~2018).
+\end{itemize}
+
+\subsection{Sharpness Computation (\texttt{measure.py})}
+
+Implements the $C_{\text{sharpness}}$ measure from Keskar~et~al.~\cite{keskar2016large}:
+
+\begin{enumerate}[leftmargin=*]
+    \item Flatten model parameters into vector $\mathbf{x}_0$.
+    \item Project onto a random subspace of dimension $d$ (default $d=10$) via random matrix
+          $\mathbf{A}_+ \in \mathbb{R}^{d \times P}$ with orthonormal rows.
+    \item Solve constrained maximisation using L-BFGS-B:
+          \[
+          \max_{\mathbf{y} \in \mathbb{R}^d} \mathcal{L}(\mathbf{x}_0 + \mathbf{A}\mathbf{y})
+          \quad\text{s.t.}\quad |y_i| \le \varepsilon(|\mathbf{A}_{+,i:}\mathbf{x}_0| + 1)
+          \]
+    \item Sharpness: $\phi = \frac{f_{\max} - f_0}{1 + f_0} \times 100$.
+\end{enumerate}
+
+\subsection{Visualization (\texttt{visualization.py})}
+
+Produces multi-panel line plots of loss/accuracy vs.~epochs across training-data-percentage
+sweeps, with colorbars indicating the percentage of training data.
+
+\begin{itemize}[leftmargin=*]
+    \item \texttt{load\_metric\_data}: reads CSV logs into tensors.
+    \item \texttt{add\_metric\_graph}: plots one metric with color scale by $T$ (training data \%).
+    \item \texttt{add\_extremum\_graph}: max/min value vs.~$T$.
+    \item \texttt{find\_inflections}: detects phase-transition points via moving-average sign changes.
+\end{itemize}
+
+\subsection{Scripts}
+
+\begin{itemize}[leftmargin=*]
+    \item \texttt{scripts/make\_data.py}: Generates token and dataset files.
+    \item \texttt{scripts/train.py}: Entry point for training; saves checkpoints and metrics.
+    \item \texttt{scripts/compute\_sharpness.py}: Loads checkpoints and runs Keskar sharpness.
+    \item \texttt{scripts/create\_partial\_metrics.py}: Evaluate checkpoints at specified epochs.
+    \item \texttt{scripts/create\_metrics\_for\_epochs.py}: Batches partial metric extraction.
+    \item \texttt{scripts/visualize\_metrics.py}: Full visualization pipeline with ffmpeg video output.
+\end{itemize}
+
+%=============================================================================
+\section{Neural Collapse Experiments (\texttt{nc\_experiments/})}
+%=============================================================================
+
+These experiments test whether Neural Collapse is necessary for generalization on CIFAR-10.
+
+\subsection{Architectures}
+\begin{itemize}[leftmargin=*]
+    \item \texttt{resnet18.py}: ResNet-18 implementation with BasicBlock from scratch.
+    \item \texttt{resnet18\_torchvision.py}: TorchVision pre-trained ResNet-18 wrapper.
+\end{itemize}
+
+\subsection{Metrics}
+The key NC metric (Equation~4 in paper) is the \emph{within-class to between-class variance ratio}:
+
+\begin{equation}
+\text{NC}_c = \frac{\text{Var}_{\text{within}}}{\text{Var}_{\text{between}}}
+= \frac{1}{K} \sum_{k=1}^K \frac{\sigma_k^2}{\|\mu_k - \mu\|^2}
+\label{eq:nc_metric}
+\end{equation}
+
+Implementation in \texttt{training\_utils.py}:
+\begin{enumerate}[leftmargin=*]
+    \item Group penultimate-layer representations by true class label.
+    \item For each pair of classes $(c_1, c_2)$, compute within-class variance $\sigma^2_{c_1}, \sigma^2_{c_2}$
+          and between-class distance $\|\mu_{c_1} - \mu_{c_2}\|^2$.
+    \item The cluster score for that pair is $(\sigma^2_{c_1} + \sigma^2_{c_2}) / (2 \|\mu_{c_1} - \mu_{c_2}\|^2)$.
+    \item The overall NC score is the mean over all class pairs.
+\end{enumerate}
+
+\subsection{Regularisation Experiments}
+Two types of regularisation are implemented:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{NC-based} (\texttt{use\_pow=1}): Maximises the NC cluster score (i.e., pushes
+          representations \emph{away} from NC) by adding $-\lambda \cdot \text{NC}_{\text{score}}$
+          to the loss.
+    \item \textbf{Flatness-based} (\texttt{use\_pow=0}): Minimises the sharpness $S^{(2)}$ by adding
+          $-\lambda \cdot \mathbb{E}[S^{(2)}]$ to the loss.
+\end{enumerate}
+
+For both variants, the regularisation is ``cancelled'' at a specified epoch,
+so the model undergoes two phases: forced anti-NC / anti-flatness, then free fine-tuning.
+
+\subsection{Running}
+\begin{lstlisting}[language=bash]
+cd nc_experiments
+bash run_script.sh   # (edit hyperparameters inside the script)
+\end{lstlisting}
+
+%=============================================================================
+\section{Relative Flatness Experiments: ResNet-18 \& ViT \& BERT \& GPT-2}
+%=============================================================================
+
+These experiments validate the flatness hypothesis across four standard architectures.
+
+\subsection{Shared Design}
+All follow the same pattern:
+\begin{enumerate}[leftmargin=*]
+    \item Train with a regulariser that either \textbf{minimises} or \textbf{maximises} relative flatness
+          (controlled by \texttt{use\_reglation} and \texttt{lambda} sign).
+    \item After $N_{\text{cancel}}$ epochs, disable the regulariser and optionally switch to
+          weight decay + cosine annealing.
+    \item Track validation accuracy as a function of flatness.
+\end{enumerate}
+
+\subsection{Sharpness Definition}
+All architectures compute the same per-sample sharpness as the grokking experiments
+(Eqs.~\ref{eq:hessian_first}--\ref{eq:sharpness2}), using the final linear layer's weight norm
+and the penultimate-layer representation norm.
+
+\subsection{Per-Architecture Details}
+
+\subsubsection*{\texttt{rf\_resnet18/}}
+\begin{itemize}[leftmargin=*]
+    \item Models: ResNet-18, Mobile ResNet (MResNet), WideResNet-16-8, EfficientNet-B0/V2.
+    \item Dataset: CIFAR-10.
+    \item Loss functions: cross-entropy, ramp loss, squared hinge, logistic hinge, leaky ramp.
+    \item Weight-capping: Frobenius or spectral norm constraints on classifier weights.
+    \item Regulariser cancellation: at \texttt{cancel\_epoch}, weight decay turns on and learning
+          rate bumps by $10\times$, then cosine annealing.
+\end{itemize}
+
+\subsubsection*{\texttt{rf\_vit/}}
+\begin{itemize}[leftmargin=*]
+    \item Dataset: ImageNet-100 (subset of ImageNet with 100 classes).
+    \item Model: ViT-Base/16 via \texttt{timm}.
+    \item Key metrics: per-epoch sharpness, NC cluster score, train/val loss and accuracy.
+\end{itemize}
+
+\subsubsection*{\texttt{rf\_bert/}}
+\begin{itemize}[leftmargin=*]
+    \item Dataset: SST-5 (Stanford Sentiment Treebank, 5 classes).
+    \item Model: \texttt{bert-base-uncased} via HuggingFace \texttt{transformers}.
+    \item Penultimate layer: CLS token hidden state (index~0 of last hidden layer).
+    \item Output head: \texttt{model.classifier.weight}.
+\end{itemize}
+
+\subsubsection*{\texttt{rf\_gpt2/}}
+\begin{itemize}[leftmargin=*]
+    \item Dataset: SST-5 (same split as BERT).
+    \item Model: \texttt{gpt2} via HuggingFace \texttt{transformers}.
+    \item Penultimate layer: last non-padding token hidden state.
+    \item Output head: \texttt{model.score.weight}.
+\end{itemize}
+
+\subsection{Training Utilities}
+
+All architectures share a common set of helper functions:
+
+\begin{description}[leftmargin=*]
+    \item[\texttt{compute\_cluster}] Same NC metric as in \texttt{nc\_experiments}.
+    \item[\texttt{ortho\_rows\_fro}] Encourages orthonormality of classifier rows:
+          $\|WW^\top - I\|_F^2$, scaled per-entry or per-row.
+    \item[\texttt{frobenius\_cap}] Projects weights onto Frobenius-norm ball:
+          if $\|W\|_F > \text{max\_norm}$, $W \leftarrow W \cdot \frac{\text{max\_norm}}{\|W\|_F}$.
+    \item[\texttt{spectral\_cap}] Projects weights onto spectral-norm ball via power iteration.
+    \item[\texttt{set\_lr}, \texttt{mul\_lr}, \texttt{set\_wd}] In-place learning rate and
+          weight decay manipulation.
+\end{description}
+
+%=============================================================================
+\section{Reproducibility Guide}
+%=============================================================================
+
+\subsection{Quick Start}
+\begin{lstlisting}[language=bash]
+# 1. Clone
+git clone https://github.com/TrustworthyMachineLearning-Lab/grokking_flatness.git
+cd grokking_flatness
+
+# 2. Install
+pip install -r requirements.txt
+pip install torch==1.13.0 pytorch-lightning==1.2.10
+cd grokking_nc_rf && pip install -e . && cd ..
+
+# 3. Generate data (grokking experiments)
+cd grokking_nc_rf && python scripts/make_data.py && cd ..
+
+# 4. Run an experiment (e.g., ResNet-18 flatness)
+cd rf_resnet18
+bash run_script.sh   # edit hyperparameters inside
+\end{lstlisting}
+
+\subsection{Plotting Results}
+\begin{itemize}[leftmargin=*]
+    \item Grokking metrics: Copy \texttt{read\_loss\_acc.ipynb} and \texttt{plot\_grok\_cluster.ipynb}
+          into the results directory and run.
+    \item Relative flatness results: Use \texttt{relative\_flatness\_plot\_results.ipynb}.
+    \item NC results: Use the saved \texttt{.npy} arrays in the experiment output directory.
+\end{itemize}
+
+\subsection{Reproducing Paper Figures}
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Figure} & \textbf{Script/Directory} & \textbf{Key Parameter(s)} \\
+\midrule
+Fig.~1 (grokking) & \texttt{grokking\_nc\_rf/} & \texttt{train\_data\_pct=20..50} \\
+Fig.~2 (NC) & \texttt{nc\_experiments/} & \texttt{use\_pow=1, cancel\_epoch=60} \\
+Fig.~4 (flatness) & \texttt{rf\_resnet18/, rf\_vit/} & \texttt{use\_reglation=1, lambda=1e-2} \\
+Figs.~16,17 (BERT) & \texttt{rf\_bert/bert\_sst5.py} & \texttt{cancel\_epoch, lambda} \\
+Figs.~18,19 (GPT-2) & \texttt{rf\_gpt2/gpt\_sst5.py} & \texttt{cancel\_epoch, lambda} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=============================================================================
+\section{Summary of Key Implementation Details}
+%=============================================================================
+
+\subsection{Sharpness Approximation}
+The sharpness metric used throughout the paper is a simplified, tractable approximation
+of the Hessian's trace:
+
+\begin{align}
+    \mathbb{E}_i\left[ \underbrace{\bigl(\mathbf{p}_i^\top(\mathbf{1} - \mathbf{p}_i)\bigr)}_{
+        \text{probabilistic curvature}} \cdot
+    \underbrace{\|\phi_i\|_2^2}_{\text{representation norm}} \right]
+    \cdot \|W_{\text{out}}\|_2^p \qquad p \in \{1,2\}
+\end{align}
+
+This decomposes into three interpretable factors: the model's softmax confidence
+(which vanishes when the model is certain), the scale of penultimate-layer activations,
+and the norm of the classifier weights.
+
+\subsection{Neural Collapse Metric}
+The NC score measures the ratio of within-class to between-class variance:
+
+\[
+\text{NC} = \frac{1}{K(K-1)} \sum_{i \neq j} \frac{\sigma_i^2 + \sigma_j^2}{2\|\mu_i - \mu_j\|_2^2}
+\]
+
+where $\mu_k$ and $\sigma_k^2$ are the empirical mean and variance of penultimate-layer
+representations for class~$k$. Lower values indicate stronger collapse.
+
+\subsection{Regulariser Cancellation Protocol}
+A key experimental design is the ``two-phase'' training: the model is first regularised
+to suppress either NC or flatness, then at a prescribed epoch the regulariser is removed
+and the model is allowed to converge naturally. This isolates the causal effect of each
+property on downstream generalisation.
+
+%=============================================================================
+\section{File Manifest}
+%=============================================================================
+
+\begin{center}
+\small
+\begin{tabular}{lp{10cm}}
+\toprule
+\textbf{File / Directory} & \textbf{Purpose} \\
+\midrule
+\texttt{README.md} & Top-level documentation and citation info \\
+\texttt{requirements.txt} & Python dependencies \\
+\texttt{LICENSE} & License file \\
+\texttt{figure/} & Paper figures \\
+\midrule
+\multicolumn{2}{c}{\textbf{Shared Grokking Library}} \\
+\midrule
+\texttt{grokking\_nc\_rf/grok/} & Core package \\
+\hspace{5mm}\texttt{data.py} & Algorithmic dataset generation \\
+\hspace{5mm}\texttt{transformer.py} & Decoder-only transformer with noise \\
+\hspace{5mm}\texttt{training.py} & LightningModule, CustomAdamW, SAM \\
+\hspace{5mm}\texttt{metrics.py} & Norm-based measures \& bounds \\
+\hspace{5mm}\texttt{measure.py} & Keskar sharpness (L-BFGS-B) \\
+\hspace{5mm}\texttt{visualization.py} & Plotting utilities \\
+\hspace{5mm}\texttt{\_\_init\_\_.py} & Package init \\
+\texttt{grokking\_nc\_rf/scripts/} & Training, data, metric, plot scripts \\
+\texttt{grokking\_nc\_rf/setup.py} & Package install \\
+\midrule
+\multicolumn{2}{c}{\textbf{NC Experiments}} \\
+\midrule
+\texttt{nc\_experiments/resnet18.py} & ResNet-18 from scratch \\
+\texttt{nc\_experiments/resnet18\_torchvision.py} & TorchVision ResNet-18 \\
+\texttt{nc\_experiments/train.py} & NC experiment entry point \\
+\texttt{nc\_experiments/training\_utils.py} & NC metric \& training loop \\
+\texttt{nc\_experiments/utils.py} & Data loading \& plotting \\
+\midrule
+\multicolumn{2}{c}{\textbf{Relative Flatness Experiments}} \\
+\midrule
+\texttt{rf\_resnet18/} & ResNet-18 \& variants \\
+\texttt{rf\_vit/train\_vit.py} & ViT-Base/16 on ImageNet-100 \\
+\texttt{rf\_bert/bert\_sst5.py} & BERT on SST-5 \\
+\texttt{rf\_gpt2/gpt\_sst5.py} & GPT-2 on SST-5 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=============================================================================
+\section{Conclusion}
+%=============================================================================
+
+The implementation is modular, with a clear separation between the shared grokking library
+and architecture-specific experiment scripts. Each experiment directory is self-contained
+with its own \texttt{run\_script.sh} and supports comprehensive metric logging. The code
+is designed for reproducibility: all random seeds are fixed, hyperparameters are fully
+configurable via command-line arguments, and results are saved in structured formats
+(CSV logs for Lightning, NumPy arrays for per-epoch metrics, PyTorch checkpoints for
+model weights).
+
+\bibliographystyle{unsrt}
+\begin{thebibliography}{9}
+
+\bibitem{power2022grokking}
+A.~Power, Y.~Burda, H.~Edwards, I.~Babuschkin, and V.~Misra.
+\emph{Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets}.
+ICLR Blog Track, 2022.
+
+\bibitem{keskar2016large}
+N.~Keskar, D.~Mudigere, J.~Nocedal, M.~Smelyanskiy, and P.~Tang.
+\emph{On Large-Batch Training for Deep Learning: Generalization Gap and Sharp Minima}.
+ICLR, 2017.
+
+\bibitem{neyshabur2015towards}
+B.~Neyshabur, R.~Tomioaka, and N.~Srebro.
+\emph{Towards Generalization in Deep Learning}.
+NeurIPS, 2015.
+
+\bibitem{bartlett2017spectrally}
+P.~Bartlett, D.~Foster, and M.~Telgarsky.
+\emph{Spectrally-normalized margin bounds for neural networks}.
+NeurIPS, 2017.
+
+\bibitem{papyan2020neural}
+V.~Papyan, X.~Han, and D.~Donoho.
+\emph{Prevalence of neural collapse during the terminal phase of deep learning training}.
+PNAS, 2020.
+
+\bibitem{han2025flatness}
+T.~Han, L.~Adilova, H.~Petzka, J.~Kleesiek, and M.~Kamp.
+\emph{Flatness is Necessary, Neural Collapse is Not: Rethinking Generalization via Grokking}.
+NeurIPS, 2025.
+
+\end{thebibliography}
+
+\end{document}
