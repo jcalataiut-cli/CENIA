@@ -199,15 +199,15 @@ Barbero et al. (2024) observaron que los heads simbólicos tienden a usar frecue
 
 \section{Nuestra interpretación}
 
-\subsection{¿Por qué este artículo es importante para el TFM?}
+\subsection{¿Qué podemos aportar a partir de aquí?}
 
-Este artículo ejemplifica un enfoque que nos interesa particularmente en nuestro trabajo: \textbf{diseñar tareas sintéticas que aíslen mecanismos específicos}. Al crear dos tareas que son estructuralmente idénticas pero que requieren mecanismos distintos, los autores pueden estudiar cada mecanismo de forma aislada. Esto es análogo a cómo en teoría de procesos gaussianos (NNGP/NTK) diseñamos arquitecturas específicas para aislar el comportamiento del kernel.
+Este artículo abre múltiples líneas de contribución original. Una de las más prometedoras es el \textbf{diseño de tareas sintéticas que aíslen mecanismos específicos} — una metodología que permite estudiar cada componente de un sistema complejo de forma controlada. Al crear dos tareas que son estructuralmente idénticas pero que requieren mecanismos distintos, los autores demuestran cómo aislar factores de confusión en el estudio de la generalización.
 
 \subsection{Una lección sobre generalización}
 
 La moraleja más importante del artículo es que \textbf{el tipo de mecanismo que un modelo aprende determina su capacidad de generalización}. No todos los mecanismos son iguales: los simbólicos son intrínsecamente más robustos. Esto tiene implicaciones profundas para el diseño de arquitecturas: si podemos sesgar el aprendizaje hacia estrategias simbólicas, obtendremos modelos que generalizan mejor.
 
-En el contexto de nuestro TFM, esta idea resuena con la pregunta de cómo la arquitectura de una red neuronal (su kernel NTK asociado) determina qué funciones puede aprender y cómo generaliza. Aquí, la ``arquitectura'' es el mismo transformer, pero el ``kernel efectivo'' depende de si el head aprende un comportamiento posicional o simbólico.
+En esta línea, la pregunta es: ¿cómo determina la arquitectura qué funciones puede aprender y cómo generaliza? Aquí, la ``arquitectura'' es el transformer, pero el ``mecanismo efectivo'' depende de si el head aprende un comportamiento posicional o simbólico.
 
 % =============================================================================
 % CAPÍTULO 2: LAS TAREAS PROPUESTAS
@@ -317,11 +317,11 @@ La \textbf{única} diferencia es el tipo de información que se necesita para se
 
 El diseño de tareas paralelas es una de las contribuciones metodológicas más importantes del artículo. Al mantener todo constante excepto el tipo de razonamiento requerido, los autores pueden \textbf{atribuir causalmente} las diferencias en el comportamiento de los heads al tipo de mecanismo (posicional vs. simbólico).
 
-En nuestro TFM sobre NNGP/NTK, esto es análogo a mantener fija la arquitectura de red mientras variamos la función de activación o la inicialización: podemos aislar el efecto de cada componente en el kernel resultante.
+Esto es análogo a mantener fija la arquitectura de red mientras variamos un componente específico: podemos aislar el efecto de cada elemento en el resultado final.
 
 \subsection{La conexión con generalización}
 
-El aspecto más interesante para nosotros es que las dos tareas, siendo equivalentes en complejidad, tienen perfiles de generalización radicalmente distintos. Esto sugiere que la \textbf{forma} en que un modelo resuelve una tarea (su ``estrategia interna'') importa tanto o más que la tarea misma. En términos de NTK, dos redes con la misma función de pérdida pueden tener kernels efectivos muy diferentes si aprenden representaciones internas distintas.
+El aspecto más interesante es que la \textbf{forma} en que un modelo resuelve una tarea (su ``estrategia interna'') importa tanto o más que la tarea misma. Dos modelos con la misma función de pérdida pueden tener representaciones internas muy diferentes — unas que generalizan y otras que no.
 
 \newpage
 
@@ -376,7 +376,7 @@ La pérdida se calcula solo en el último token (last-token prediction). Esto fu
 
 \section{Nuestra interpretación}
 
-La decisión de usar single-head es instructiva para nuestro TFM. En NNGP/NTK, a menudo consideramos capas completas o neuronas individuales. El single-head actúa como una ``neurona interpretable'' — un componente cuya función podemos aislar y etiquetar. Esto nos recuerda que, para entender un sistema complejo, a veces es necesario simplificarlo, aunque eso signifique sacrificar realismo.
+La decisión de usar single-head tiene una consecuencia metodológica importante: cada capa solo puede implementar un mecanismo a la vez, lo que convierte la arquitectura en una ``caja de herramientas'' donde cada herramienta tiene una función etiquetable. Esto simplifica drásticamente el análisis y sugiere que, para entender sistemas complejos, a veces es necesario sacrificar realismo en favor de interpretabilidad.
 
 La escala del experimento (480k secuencias, 55 min de entrenamiento) es modesta para los estándares actuales de LLMs, pero suficiente para que emerjan comportamientos claros. Esto valida el uso de modelos pequeños como laboratorios para estudiar fenómenos que ocurren a escala.
 
@@ -480,12 +480,7 @@ Imaginemos un foco en un escenario:
     \item \textbf{Foco posicional:} ilumina siempre la tercera silla, haya quien haya sentado.
     \item \textbf{Foco simbólico:} ilumina siempre a la persona 'Juan', se siente donde se siente.
 \end{itemize}
-
 El positional score mide qué tan fijo está el foco en la silla; el symbolic score mide qué tan bien sigue a Juan.
-
-\subsection{Conexión con NNGP/NTK}
-
-En el contexto de nuestro TFM, esta distinción recuerda a la diferencia entre kernels que dependen de la geometría del input (análogo a posicional) y kernels que dependen del contenido semántico (análogo a simbólico). El NTK de una red con pesos compartidos (CNN) tiene propiedades de invarianza similares a las que buscamos aquí.
 
 \newpage
 
@@ -709,11 +704,11 @@ Estos resultados confirman que la asimetría posicional/simbólica no es un arte
 
 \subsection{La discrepancia como herramienta de análisis}
 
-La noción de discrepancia es, en nuestra opinión, una de las contribuciones más elegantes del artículo. Proporciona un \textbf{puente cuantitativo} entre la arquitectura (RoPE, frecuencias) y el comportamiento (generalización). Es el tipo de herramienta que nos gustaría desarrollar en nuestro TFM: una métrica teórica que predice el comportamiento empírico.
+La noción de discrepancia es una de las contribuciones más elegantes del artículo. Proporciona un \textbf{puente cuantitativo} entre la arquitectura (RoPE, frecuencias) y el comportamiento (generalización). Tener una cota superior analítica que predice cómo se degrada el rendimiento con la longitud de la secuencia es exactamente el tipo de herramienta que necesitamos para diseñar modelos con garantías de generalización.
 
-\subsection{Conexión con NTK}
+\subsection{Implicaciones para la teoría de generalización}
 
-En teoría de NTK, el kernel efectivo de una red determina qué funciones puede aprender y con qué velocidad. La discrepancia juega un papel similar aquí: determina qué tan bien puede un attention head ``distinguir'' entre tokens en función de la longitud de la secuencia. Ambos son ejemplos de cómo las propiedades geométricas de la arquitectura (el kernel en NTK, la rotación RoPE aquí) determinan la capacidad de generalización.
+La discrepancia es un ejemplo de cómo una propiedad geométrica de la arquitectura — en este caso, el ángulo de rotación de RoPE — determina la capacidad de generalización de forma analítica y cuantitativa. Esto abre la pregunta: ¿qué otras propiedades geométricas de las arquitecturas modernas tienen consecuencias predecibles para la generalización? La noción de \textbf{margen efectivo} (la diferencia entre el logit correcto y el segundo mejor) es un candidato prometedor para unificar estos análisis.
 
 \subsection{Implicaciones prácticas}
 
@@ -1130,11 +1125,18 @@ Para tareas que requieren generalización a largo contexto, es mejor formularlas
 
 Los resultados sugieren que explorar codificaciones posicionales alternativas o mecanismos de atención que favorezcan el comportamiento simbólico podría ser una dirección fructífera. Por ejemplo, atención con sesgo hacia frecuencias bajas, o mecanismos de atención que combinen información posicional y simbólica de forma explícita.
 
-\section{Relación con nuestro TFM}
+\section{Líneas de contribución abiertas}
 
-En nuestro TFM sobre NNGP/NTK, estamos estudiando cómo la arquitectura de una red neuronal determina su kernel efectivo y, por tanto, qué funciones puede aprender. Este artículo es un ejemplo perfecto de este principio aplicado a transformers: la arquitectura (RoPE, single-head) determina qué mecanismos pueden emerger (posicional, simbólico) y cómo estos mecanismos generalizan.
+Este artículo sugiere múltiples direcciones para investigación original en generalización:
 
-La noción de \textbf{discrepancia} es particularmente relevante: es un análogo a cómo el NTK determina la velocidad de aprendizaje y la generalización. Ambos son propiedades geométricas de la arquitectura que tienen consecuencias predictivas.
+\begin{itemize}
+    \item \textbf{Regularización para comportamiento simbólico:} ¿podemos diseñar términos de pérdida o arquitecturas que sesguen explícitamente a los heads hacia comportamientos simbólicos? Si es así, podríamos obtener modelos que generalizan mejor a largo contexto de forma sistemática.
+    \item \textbf{Generalización de la discrepancia a otras arquitecturas:} la noción de discrepancia se definió para atención single-head con RoPE. ¿Cómo se generaliza a modelos multi-head, otras codificaciones posicionales (ALiBi, NoPE), o mecanismos de atención alternativos?
+    \item \textbf{Métrica de ``pureza'' como herramienta de diagnóstico:} la pureza de heads correlaciona con precisión. Esto podría usarse como métrica de monitoreo durante el entrenamiento — similar a cómo se usan las métricas de colapso neural (NC) para diagnosticar la calidad del aprendizaje.
+    \item \textbf{Tareas sintéticas como banco de pruebas:} el diseño de tareas paralelas (misma estructura, mecanismo distinto) es una metodología exportable a otros problemas. Por ejemplo, diseñar tareas que aíslen memorización vs. composición, o razonamiento transitivo vs. razonamiento causal.
+\end{itemize}
+
+La noción de \textbf{discrepancia} es particularmente fértil: es una cota analítica que conecta arquitectura y generalización. Extenderla a configuraciones más realistas es una contribución con impacto potencial.
 
 \section{Limitaciones y trabajo futuro}
 
@@ -1168,9 +1170,9 @@ El artículo ``Positional versus Symbolic Attention Heads: Learning Dynamics, Ro
     \item \textbf{Separación cuantitativa:} demostración de que los mecanismos simbólicos generalizan mucho mejor que los posicionales, convalidada en modelos frontera.
 \end{enumerate}
 
-Para nosotros, la lección más importante es que \textbf{la arquitectura importa}. No solo determina qué tan bien aprende un modelo, sino \emph{cómo} aprende y \emph{qué} tipo de representaciones internas desarrolla. Y estas representaciones internas, a su vez, determinan qué tan bien generaliza el modelo.
+Para nosotros, la lección más importante es que \textbf{la arquitectura importa}. No solo determina qué tan bien aprende un modelo, sino \emph{cómo} aprende y \emph{qué} tipo de representaciones internas desarrolla. Y estas representaciones internas, a su vez, determinan qué tan bien generaliza el modelo a condiciones no vistas durante el entrenamiento.
 
-En el contexto de nuestro TFM, este artículo es una inspiración: nos muestra cómo un diseño experimental cuidadoso, combinado con análisis teórico, puede revelar principios profundos sobre el funcionamiento de las redes neuronales. Es el tipo de contribución que aspiramos a hacer con nuestro trabajo sobre NNGP/NTK.
+Este artículo es un ejemplo de cómo un diseño experimental cuidadoso, combinado con análisis teórico riguroso, puede revelar principios profundos sobre el funcionamiento de las redes neuronales y abrir nuevas vías para mejorar la generalización.
 
 % =============================================================================
 % BIBLIOGRAFÍA
