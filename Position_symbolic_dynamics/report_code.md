@@ -8,44 +8,27 @@ Basado en la descripción del paper, el código se organiza en los siguientes m�
 
 ```
 number-and-letter-neurips26-C754/
-├── dataset/
-│   ├── number_task.py          # Generación del dataset para Number Task
-│   ├── letter_task.py          # Generación del dataset para Letter Task
-│   └── vocab.py                # Vocabulario y tokenización
-├── model/
-│   ├── gptj.py                 # Arquitectura GPT-J (basada en mesh-transformer-jax)
-│   ├── layers.py               # Capas del transformer
-│   └── config.py               # Configuración del modelo
-├── training/
-│   ├── train.py                # Loop de entrenamiento (last-token prediction)
-│   └── eval.py                 # Evaluación en test set
-├── metrics/
-│   ├── positional_symbolic_scores.py   # Cálculo de positional y symbolic scores
-│   ├── permutation_utils.py            # Permutaciones y pesos
-│   └── entropy.py                      # Cálculo de entropía de atención
-├── analysis/
-│   ├── head_purity.py          # Análisis de pureza de heads
-│   ├── frequency_analysis.py   # Análisis de frecuencias RoPE
-│   ├── discrepancy.py          # Cálculo de discrepancia teórica
-│   └── generalization.py       # Pruebas de generalización a longitudes largas
-├── theoretical/
-│   ├── index_construction.py   # Construcción teórica de Index (Theorem 3.1)
-│   ├── retrieval_construction.py      # Construcción teórica de Retrieval
-│   └── discrepancy_bounds.py   # Cotas de discrepancia (Theorem 3.2)
-├── visualization/
-│   ├── learning_dynamics.py    # Visualización de dinámicas de aprendizaje (Fig 2)
-│   ├── attention_patterns.py   # Visualización de patrones de atención (Fig 3)
-│   ├── geometric_analysis.py   # Visualización geométrica RoPE (Fig 4)
-│   └── generalization_plots.py # Visualización de generalización (Fig 5)
-├── llm_evaluation/
-│   ├── prompt_templates.py     # Templates de prompts para LLMs
-│   ├── run_llm_tests.py        # Evaluación en GPT-5, Claude, etc.
-│   └── results_analysis.py     # Análisis de resultados de LLMs
-├── configs/
-│   ├── number_task.yaml        # Config para Number Task
-│   └── letter_task.yaml        # Config para Letter Task
-├── requirements.txt
-└── README.md
+├── LICENSE                        # MIT License
+├── README.md                      # Descripción del repositorio
+└── src/
+    ├── cmds/                      # Puntos de entrada (scripts ejecutables)
+    │   ├── multihop_exp.py                    # Experimento Number Task (entrenamiento)
+    │   ├── symbolic_exp.py                    # Experimento Letter Task (entrenamiento)
+    │   ├── get_attention_weights.py           # Extracción de atención con permutaciones
+    │   ├── compute_metrics.py                 # Cálculo positional/symbolic scores
+    │   ├── compute_metrics_multiple_queries.py# Scores para múltiples posiciones query
+    │   ├── compute_symbolic_metrics.py        # Scores para Letter Task
+    │   └── schemas.py                         # Esquemas Pydantic de configuración
+    ├── data/                       # Generación de datasets y tokenizadores
+    │   ├── dataset.py                          # Number Task: SequenceMultiHopDataset
+    │   ├── symbolic_dataset.py                 # Letter Task: SequenceSymbolicDataset
+    │   ├── generate_dataset_sym.py             # Helper para generar Letter dataset
+    │   └── utils.py                            # Validación de secuencias
+    ├── lib/                        # Librerías compartidas
+    │   ├── metrics.py                          # Positional/Symbolic scores
+    │   └── s3.py                               # Subida/descarga a S3
+    └── models/                     # Entrenamiento personalizado
+        └── train.py                            # Trainer + Callbacks + Métricas
 ```
 
 ---

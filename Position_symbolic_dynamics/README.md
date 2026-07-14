@@ -11,7 +11,7 @@ Position_symbolic_dynamics/
 ├── paper_source/
 │   └── paper.pdf                    # Artículo original (PDF de arXiv)
 ├── positional_vs_symbolic_learningdynamics.pdf  # PDF adjunto
-├── code_reconstruction/             # Código fuente reconstruido
+| `code/`                            # Código fuente original del repositorio anónimo
 ├── report_paper.md                  # Informe explicativo del artículo
 └── report_code.md                   # Informe explicativo del código
 ```

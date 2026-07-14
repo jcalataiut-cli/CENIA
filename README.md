@@ -18,7 +18,28 @@ Este subdirectorio contiene el estudio completo sobre **Positional versus Symbol
 | `positional_vs_symbolic_learningdynamics.pdf` | Versión del artículo (PDF adjunto) |
 | `report_paper.md` | Informe detallado del artículo |
 | `report_code.md` | Informe detallado del código |
-| `code_reconstruction/` | Reconstrucción del código fuente |
+├── code/                      # Código fuente original del repositorio
+│   ├── LICENSE
+│   ├── README.md
+│   └── src/
+│       ├── cmds/             # Puntos de entrada (experimentos)
+│       │   ├── multihop_exp.py          # Number task experiment
+│       │   ├── symbolic_exp.py          # Letter task experiment
+│       │   ├── get_attention_weights.py # Extracción de atención
+│       │   ├── compute_metrics.py       # Positional/symbolic scores
+│       │   ├── compute_metrics_multiple_queries.py
+│       │   ├── compute_symbolic_metrics.py
+│       │   └── schemas.py               # Pydantic configs
+│       ├── data/             # Datasets y tokenizadores
+│       │   ├── dataset.py               # Number task dataset
+│       │   ├── symbolic_dataset.py      # Letter task dataset
+│       │   ├── generate_dataset_sym.py  # Generación helper
+│       │   └── utils.py                 # Validación
+│       ├── lib/              # Librerías
+│       │   ├── metrics.py               # Pos/Sym scores
+│       │   └── s3.py                    # S3 upload/download
+│       └── models/           # Entrenamiento
+│           └── train.py                 # Trainer personalizado
 
 ### Enlaces
 
