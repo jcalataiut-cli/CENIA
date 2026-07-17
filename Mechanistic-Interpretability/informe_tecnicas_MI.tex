@@ -1,0 +1,1454 @@
+\documentclass[11pt,a4paper]{report}
+
+% ============================================================
+% PAQUETES
+% ============================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[hmargin=2.5cm,vmargin=2.8cm]{geometry}
+\usepackage{graphicx}
+\usepackage[colorlinks=true,linkcolor=blue!,citecolor=blue!50!black,urlcolor=blue!60!black]{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{dsfont}
+
+% ============================================================
+% CONFIGURACIÓN
+% ============================================================
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+\lstset{
+  language=Python,
+  basicstyle=\footnotesize\ttfamily,
+  numbers=left,
+  numberstyle=\tiny,
+  frame=single,
+  breaklines=true,
+  backgroundcolor=\color{gray!5},
+  commentstyle=\color{gray!60},
+  keywordstyle=\color{blue!70},
+  stringstyle=\color{red!60},
+}
+
+\fancyhf{}
+\fancyhead[L]{\small\textit{Informe Técnico: Mecanistic Interpretability}}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\theoremstyle{definition}
+\newtheorem{definicion}{Definición}[chapter]
+\newtheorem{ejemplo}{Ejemplo}[chapter]
+\newtheorem{algoritmo}{Algoritmo}[chapter]
+
+% ============================================================
+% TÍTULO
+% ============================================================
+\title{\textbf{Técnicas de Mecanistic Interpretability\\para Modelos de Lenguaje Basados en Transformers}}
+\author{\large Informe Técnico Detallado}
+\date{\large Julio 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+\newpage
+\pagestyle{fancy}
+
+% ============================================================
+% TABLA DE CONTENIDOS
+% ============================================================
+\tableofcontents
+\newpage
+
+% ============================================================
+% CAPÍTULO 1 — INTRODUCCIÓN
+% ============================================================
+\chapter{Introducción}
+
+La \textbf{Mecanistic Interpretability} (MI) es una rama de la inteligencia artificial que busca comprender el funcionamiento interno de las redes neuronales mediante un proceso de \emph{ingeniería inversa}. A diferencia de enfoques puramente conductistas que solo observan entradas y salidas, la MI aspira a descomponer el comportamiento de un modelo entrenado en componentes interpretables: circuitos, características (features), neuronas y mecanismos causales.
+
+Los modelos de lenguaje basados en transformers~\cite{vaswani2017attention} han alcanzado capacidades notables en una amplia variedad de tareas, desde generación de texto hasta razonamiento matemático. Sin embargo, su complejidad interna---miles de millones de parámetros, docenas de capas, múltiples cabezas de atención---los convierte en auténticas \emph{cajas negras}. La Mecanistic Interpretability proporciona un conjunto de herramientas analíticas para abrir esas cajas negras y entender qué hace cada componente y por qué.
+
+\section{Motivación}
+
+Comprender el funcionamiento interno de los modelos de lenguaje no es solo un ejercicio académico. La MI tiene implicaciones directas para:
+
+\begin{itemize}
+    \item \textbf{Seguridad y alineamiento}: verificar que el modelo no utiliza atajos espurios, sesgos indeseados o comportamientos engañosos.
+    \item \textbf{Depuración y mejora}: identificar fallos sistemáticos y repararlos mediante edición localizada de parámetros.
+    \item \textbf{Transferencia y generalización}: entender qué mecanismos se reutilizan entre tareas, facilitando el diseño de modelos más eficientes.
+    \item \textbf{IA explicable}: proporcionar explicaciones causales---no solo correlacionales---de las predicciones del modelo.
+\end{itemize}
+
+\section{Estructura de este informe}
+
+Este informe presenta doce técnicas fundamentales de Mecanistic Interpretability, organizadas en capítulos independientes. Cada capítulo sigue una estructura pedagógica uniforme:
+
+\begin{enumerate}
+    \item \textbf{Problema que resuelve}: contexto y motivación específica.
+    \item \textbf{Fundamento matemático}: definiciones formales y notación.
+    \item \textbf{Detalles de implementación}: cómo se aplica la técnica en la práctica.
+    \item \textbf{Ejemplo ilustrativo}: un caso concreto y sencillo que muestra el funcionamiento.
+    \item \textbf{Limitaciones y consideraciones}: advertencias sobre cuándo y cómo usar la técnica.
+\end{enumerate}
+
+Las técnicas se presentan en el siguiente orden:
+
+\begin{enumerate}
+    \item \textbf{Logit Lens} (Capítulo~\ref{ch:logit-lens}) --- proyección de estados intermedios al espacio de vocabulario.
+    \item \textbf{Probing} (Capítulo~\ref{ch:probing}) --- clasificadores lineales sobre activaciones.
+    \item \textbf{SAE / Sparse Autoencoders} (Capítulo~\ref{ch:sae}) --- descomposición de activaciones en features monosemánticas.
+    \item \textbf{Automated Feature Explanation} (Capítulo~\ref{ch:auto-feat}) --- etiquetado automático de features con LLMs.
+    \item \textbf{Mean Ablation} (Capítulo~\ref{ch:mean-ablation}) --- reemplazo de activaciones por su media.
+    \item \textbf{Path Patching} (Capítulo~\ref{ch:path-patching}) --- aislamiento causal de rutas específicas.
+    \item \textbf{Random Ablation} (Capítulo~\ref{ch:random-ablation}) --- reemplazo preservando la distribución de activaciones.
+    \item \textbf{Causal Scrubbing} (Capítulo~\ref{ch:causal-scrubbing}) --- verificación formal de hipótesis interpretativas.
+    \item \textbf{Activation Patching} (Capítulo~\ref{ch:activation-patching}) --- intervención causal para localizar componentes.
+    \item \textbf{ACDC} (Capítulo~\ref{ch:acdc}) --- descubrimiento automático de circuitos.
+    \item \textbf{Attribution Patching} (Capítulo~\ref{ch:attribution-patching}) --- aproximación eficiente del Activation Patching.
+    \item \textbf{Edge Attribution Patching} (Capítulo~\ref{ch:eap}) --- atribución de aristas a escala industrial.
+\end{enumerate}
+
+El informe concluye con una tabla comparativa que resume las fortalezas, debilidades y casos de uso de cada técnica, junto con recomendaciones prácticas para investigadores que se inician en este campo.
+
+\section{Arquitectura de referencia}
+
+Para facilitar la exposición, asumimos un transformer estándar como el de GPT-2~\cite{radford2019language}. Un transformer procesa una secuencia de tokens $\mathbf{x} = (x_1, \dots, x_n)$ a través de $L$ capas. Cada capa $l$ consta de:
+
+\begin{itemize}
+    \item Una subcapa de \textbf{atención multi-cabeza} (MHA) que escribe en el \textbf{residual stream} $\mathbf{h}^{(l)}$.
+    \item Una subcapa \textbf{feed-forward} (FFN) que también escribe en el residual stream.
+\end{itemize}
+
+El residual stream es el canal de comunicación central del modelo~\cite{elhage2021mathematical}. En cada capa $l$:
+
+\[
+\mathbf{h}^{(l+1)} = \mathbf{h}^{(l)} + \text{Attn}^{(l)}(\mathbf{h}^{(l)}) + \text{FFN}^{(l)}(\mathbf{h}^{(l)})
+\]
+
+donde $\mathbf{h}^{(0)}$ es la suma de la embedding de token y la embedding posicional. La predicción final se obtiene aplicando \emph{layer normalization} seguida de la matriz de \emph{unembedding} $\mathbf{W}_U \in \mathbb{R}^{d \times |\mathcal{V}|}$ al vector $\mathbf{h}^{(L)}$:
+
+\[
+\text{logits} = \text{LayerNorm}(\mathbf{h}^{(L)}) \cdot \mathbf{W}_U
+\]
+
+Esta arquitectura es el punto de partida común para todas las técnicas que exploraremos.
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 2 — LOGIT LENS
+% ============================================================
+\chapter{Logit Lens}
+\label{ch:logit-lens}
+
+\section{Problema que resuelve}
+
+Imaginemos que estamos observando un modelo de lenguaje generar texto token a token. Sabemos qué token predice al final de todo el proceso, pero no tenemos idea de cómo evoluciona esa predicción a lo largo de las capas. ¿El modelo ya \"sabe\" la respuesta en capas tempranas y solo la refina? ¿O construye la predicción gradualmente, añadiendo información en cada capa?
+
+La \textbf{Logit Lens}~\cite{nostalgebraist2020logitlens} es una técnica tan simple como poderosa que responde a esta pregunta: consiste en aplicar directamente la matriz de \emph{unembedding} $\mathbf{W}_U$ a los estados ocultos intermedios del residual stream, como si cada capa fuera la última. Esto nos permite visualizar la distribución de probabilidad sobre el vocabulario que el modelo ``tendría'' en cada capa si se detuviera en ese punto.
+
+\section{Fundamento matemático}
+
+\subsection{La idea central}
+
+Dado un transformer con $L$ capas, el residual stream en la capa $l$ es $\mathbf{h}^{(l)}$. La predicción final se obtiene como:
+
+\[
+p_{\text{final}}(x) = \text{softmax}\!\big(\text{LayerNorm}(\mathbf{h}^{(L)}) \cdot \mathbf{W}_U\big)
+\]
+
+La Logit Lens propone aplicar la misma transformación a cada capa intermedia:
+
+\[
+\hat{p}^{(l)}(x) = \text{softmax}\!\big(\text{LayerNorm}(\mathbf{h}^{(l)}) \cdot \mathbf{W}_U\big)
+\]
+
+Esta operación no requiere entrenamiento adicional: reutiliza los parámetros existentes del modelo.
+
+\subsection{Interpretación como refinamiento iterativo}
+
+La hipótesis clave detrás de la Logit Lens es que el residual stream puede interpretarse como un ``conducto'' que transporta la predicción en evolución del modelo. Cada capa lee el estado actual, computa una actualización (atención + FFN), y la suma al residual. Desde esta perspectiva, la predicción final emerge como un proceso de refinamiento iterativo:
+
+\[
+\text{Predicción inicial} \xrightarrow{\text{capa 1}} \text{refinamiento} \xrightarrow{\text{capa 2}} \dots \xrightarrow{\text{capa L}} \text{predicción final}
+\]
+
+Nostalgebraist (2020)~\cite{nostalgebraist2020logitlens} demostró que, en GPT-2 Small, las capas medias ya contienen información semántica sustancial: la distribución $\hat{p}^{(l)}$ para $l \approx L/2$ ya asigna probabilidad no trivial al token correcto, aunque con mucho ruido.
+
+\subsection{Ejemplo concreto}
+
+Consideremos GPT-2 Small procesando la frase \texttt{``The capital of France is''}. La siguiente tabla muestra los principales tokens predichos por Logit Lens en distintas capas:
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Capa} & \textbf{Top-1} & \textbf{Top-2} & \textbf{Top-3} \\
+\midrule
+0 (embedding) & \texttt{The} & \texttt{the} & \texttt{capital} \\
+2 & \texttt{capital} & \texttt{City} & \texttt{Paris} \\
+4 & \texttt{Paris} & \texttt{paris} & \texttt{capital} \\
+6 & \texttt{Paris} & \texttt{paris} & \texttt{France} \\
+8 & \texttt{Paris} & \texttt{paris} & \texttt{the} \\
+10 & \texttt{Paris} & \texttt{paris} & \texttt{France} \\
+12 (final) & \texttt{Paris} & \texttt{paris} & \texttt{France} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Observamos que ya en la capa~4 el modelo ``sabe'' que la respuesta probable es \texttt{Paris}, y las capas posteriores simplemente consolidan y refinan esta predicción.
+
+\section{Variante: Tuned Lens}
+
+La Logit Lens original tiene limitaciones importantes (que discutiremos en la Sección~\ref{sec:logit-lens-lim}). Para abordarlas, Belrose et al.~\cite{belrose2023tunedlens} propusieron la \textbf{Tuned Lens}: en lugar de aplicar directamente $\mathbf{W}_U$, se entrena una transformación afín \emph{por capa} antes de la proyección.
+
+\subsection{Definición formal}
+
+Para cada capa $l$, se define un \emph{translator} $(\mathbf{A}_l, \mathbf{b}_l)$ con $\mathbf{A}_l \in \mathbb{R}^{d \times d}$, $\mathbf{b}_l \in \mathbb{R}^{d}$. La Tuned Lens se expresa como:
+
+\[
+\text{TunedLens}_l(\mathbf{h}^{(l)}) = \text{LogitLens}\!\big(\mathbf{A}_l \cdot \mathbf{h}^{(l)} + \mathbf{b}_l\big) = \text{LayerNorm}[\mathbf{A}_l \cdot \mathbf{h}^{(l)} + \mathbf{b}_l] \cdot \mathbf{W}_U
+\]
+
+\subsection{Entrenamiento}
+
+Los parámetros $(\mathbf{A}_l, \mathbf{b}_l)$ se entrenan para minimizar la divergencia KL entre la distribución de la Tuned Lens y la distribución final del modelo:
+
+\[
+\arg\min_{\mathbf{A}_l, \mathbf{b}_l} \; \mathbb{E}_{x \sim \mathcal{D}}\Big[ D_{\text{KL}}\big( p_{\text{final}}(\cdot \mid x_{<t}) \;\|\; \text{TunedLens}_l(\mathbf{h}^{(l)}_t) \big) \Big]
+\]
+
+La función de pérdida usa la distribución final como etiqueta \emph{soft}, lo que evita que el probe aprenda información que el modelo no posee realmente. El entrenamiento requiere aproximadamente 1 hora en 8$\times$A40 para un modelo de 20 mil millones de parámetros.
+
+\subsection{Mejora cualitativa}
+
+Los resultados de la Tuned Lens son dramáticamente mejores:
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Métrica} & \textbf{Logit Lens} & \textbf{Tuned Lens} \\
+\midrule
+Sesgo (KL divergence) & $\sim$4--5 bits & $\sim$0.1 bits \\
+Perplejidad en capas tempranas & Muy alta & Baja \\
+Robustez entre arquitecturas & Solo GPT-2 (post-LN) & Cualquier modelo \\
+Parámetros adicionales & 0 & $\mathbf{A}_l, \mathbf{b}_l$ por capa \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Limitaciones}
+\label{sec:logit-lens-lim}
+
+\begin{enumerate}
+    \item \textbf{Fragilidad arquitectónica}: la Logit Lens original funciona bien en GPT-2 (que usa post-layer normalization) pero falla en modelos como GPT-Neo, BLOOM u OPT (pre-layer normalization). La razón es que en estos modelos la distribución del residual stream cambia drásticamente entre capas, haciendo que $\mathbf{W}_U$ sea una mala elección para capas tempranas.
+    \item \textbf{Sesgo sistemático}: la distribución marginal de las predicciones intermedias difiere significativamente de la distribución final. Esto puede inducir a interpretaciones erróneas.
+    \item \textbf{Dimensiones ``rogue''}: ciertas dimensiones del residual stream tienen varianza extremadamente alta y distorsionan el producto con $\mathbf{W}_U$, generando picos espurios en la distribución.
+    \item \textbf{Deriva de covarianza}: la covarianza entre el residual stream y $\mathbf{W}_U$ cambia progresivamente a través de las capas, haciendo que la proyección lineal sea subóptima para capas tempranas.
+    \item \textbf{Sin información causal}: la Logit Lens muestra correlaciones entre estados intermedios y predicciones, pero no demuestra que esos estados sean causalmente necesarios para la predicción final.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 3 — PROBING
+% ============================================================
+\chapter{Probing}
+\label{ch:probing}
+
+\section{Problema que resuelve}
+
+La Logit Lens nos dice qué token ``cree'' el modelo en cada capa. Pero a menudo queremos preguntas más específicas: ¿el modelo sabe si el texto está en francés? ¿Reconoce código Python? ¿Distingue entre singular y plural en la posición del sujeto?
+
+El \textbf{probing} (o \emph{análisis con sondas})~\cite{alain2016probing} es una técnica clásica que entrena clasificadores ligeros---típicamente lineales---sobre las activaciones intermedias del modelo para detectar si cierta información está codificada en ellas. Si un clasificador lineal puede predecir una propiedad $y$ a partir de las activaciones $\mathbf{a}^{(l)}$ con alta precisión, concluimos que esa propiedad está \emph{representada} (linealmente) en esa capa.
+
+\section{Fundamento matemático}
+
+\subsection{Definición formal}
+
+Sea $\mathcal{D} = \{(\mathbf{x}_i, y_i)\}_{i=1}^N$ un conjunto de datos donde $\mathbf{x}_i$ es un texto e $y_i$ es una propiedad de interés (binaria o multiclase). Para una capa $l$, extraemos las activaciones $\mathbf{a}^{(l)}_i \in \mathbb{R}^d$ correspondientes a cada ejemplo. Entrenamos un probe lineal:
+
+\[
+\hat{y} = \sigma(\mathbf{w}_l^\top \cdot \mathbf{a}^{(l)} + b_l)
+\]
+
+donde $\sigma$ es la función sigmoide (para clasificación binaria) o softmax (multiclase), y $(\mathbf{w}_l, b_l)$ son los parámetros del probe para la capa $l$.
+
+\subsection{Métrica de ``representación''}
+
+La precisión del probe en \emph{test}---no en entrenamiento---se interpreta como una medida de cuán accesible es la propiedad $y$ desde las activaciones de la capa $l$. Si la precisión es significativamente mayor que aleatoria, concluimos que la información está presente.
+
+\begin{definicion}[Selectividad]
+Un probe es \emph{selectivo} si utiliza únicamente la información que el modelo realmente codifica, sin aprender propiedades espurias que el modelo no usa~\cite{hewitt2019selectivity}. Esta propiedad es crítica: un probe demasiado complejo (no lineal, con muchos parámetros) puede aprender a extraer información que no está realmente ``disponible'' en la representación.
+\end{definicion}
+
+\subsection{Hipótesis de linealidad}
+
+Una premisa fundamental del probing lineal es que las representaciones internas de los transformers organizan la información semántica de forma que sea linealmente accesible. Esto está respaldado por evidencia empírica~\cite{mikolov2013wordvec}: las direcciones en el espacio de representaciones codifican relaciones semánticas que pueden recuperarse con operaciones vectoriales lineales.
+
+\section{Sparse Probing}
+
+El probing clásico identifica \emph{capas} relevantes, pero no \emph{neuronas individuales}. El \textbf{sparse probing}~\cite{gurnee2023sparseprobing} añade una restricción de esparcidad para localizar features a nivel de neurona.
+
+\subsection{Definición}
+
+Dado un probe lineal denso $\mathbf{w} \in \mathbb{R}^d$, el sparse probing busca una versión $k$-sparse:
+
+\[
+\min_{\mathbf{w}, b} \; \frac{1}{N}\sum_{i=1}^N \mathcal{L}\big(y_i, \sigma(\mathbf{w}^\top \cdot \mathbf{a}^{(l)}_i + b)\big) \quad \text{sujeto a: } \|\mathbf{w}\|_0 \leq k
+\]
+
+donde $\|\mathbf{w}\|_0$ es la norma $\ell_0$ (número de coeficientes no nulos).
+
+\subsection{Métodos de solución}
+
+El problema $\ell_0$ es NP-duro. En la práctica se usan aproximaciones:
+
+\begin{enumerate}
+    \item \textbf{Diferencia de medias}: ordenar neuronas por $|\mu_{\text{pos}} - \mu_{\text{neg}}| / \sigma$, tomar top-$k$.
+    \item \textbf{Información mutua}: $I(\text{neurona}; \text{etiqueta})$.
+    \item \textbf{Coeficientes $\ell_1$}: entrenar probe con regularización L1, tomar top-$k$ por magnitud.
+    \item \textbf{Umbral adaptativo}: reducir $k$ iterativamente mientras la precisión se mantiene.
+    \item \textbf{OSP (Optimal Sparse Probing)}: algoritmo de cutting-plane con optimalidad demostrable para $k$ pequeños.
+\end{enumerate}
+
+\subsection{Hallazgos empíricos}
+
+Gurnee et al.~\cite{gurnee2023sparseprobing} aplicaron sparse probing a 7 modelos (70M a 6.9B parámetros) con más de 100 features lingüísticas y encontraron:
+
+\begin{itemize}
+    \item \textbf{Superposición masiva en capas tempranas}: las primeras capas FFN (~25\%) responden a colecciones de n-gramas no relacionados, evidencia de que las neuronas son polisemánticas.
+    \item \textbf{Neuronas dedicadas en capas medias}: aproximadamente al 40--60\% de profundidad aparecen neuronas monosemánticas para features como \texttt{is\_python\_code}, \texttt{is\_french}.
+    \item \textbf{Patrones de escalamiento}: modelos más grandes tienden a tener representaciones más esparsas, pero con dinámicas variadas (emergencia de nuevas neuronas, división, comportamiento aleatorio).
+\end{itemize}
+
+\section{Ejemplo práctico}
+
+Supongamos que queremos saber si un modelo BERT distingue entre sujeto singular y plural. Creamos un conjunto de datos con frases como:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Frase} & \textbf{Etiqueta} \\
+\midrule
+\texttt{The \textbf{dog} runs fast} & singular \\
+\texttt{The \textbf{dogs} run fast} & plural \\
+\texttt{The \textbf{cat} sleeps} & singular \\
+\texttt{The \textbf{cats} sleep} & plural \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Extraemos las activaciones de la posición del sujeto en cada capa y entrenamos un probe lineal. Si el probe alcanza $>90\%$ de precisión en la capa~8 pero solo $55\%$ en la capa~2, concluimos que la información de número gramatical emerge o se vuelve accesible alrededor de la capa~8.
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Correlación $\neq$ causalidad}: el probe puede detectar información correlacionada con $y$ que el modelo no utiliza realmente. Hewitt y Liang~\cite{hewitt2019selectivity} demostraron con el \emph{control task} que probes demasiado complejos sobreajustan a correlaciones espurias.
+    \item \textbf{Ambigüedad interpretativa}: encontrar que una neurona correlaciona con ``francés'' no significa que esa neurona sea causal para las predicciones en francés.
+    \item \textbf{Granularidad arbitraria}: no existe una definición universal de ``feature''. Diferentes granularidades producen diferentes resultados.
+    \item \textbf{Solo features binarias (en sparse probing)}: la mayoría de los estudios se centran en clasificación binaria.
+    \item \textbf{Ilusiones de interpretabilidad}: inspeccionar los máximos activadores de una neurona puede sugerir patrones que no se sostienen bajo análisis riguroso~\cite{bolukbasi2021interpretability}.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 4 — SAE
+% ============================================================
+\chapter{Sparse Autoencoders (SAE)}
+\label{ch:sae}
+
+\section{Problema que resuelve}
+
+Una de las observaciones más perturbadoras de la Mecanistic Interpretabilidad es el fenómeno de \textbf{superposición} (superposition)~\cite{elhage2022superposition}: los modelos representan \emph{más features que dimensiones en sus activaciones}. Esto significa que una neurona individual raramente codifica una sola característica (monosemanticidad); en su lugar, las neuronas son \textbf{polisemánticas}, respondiendo a combinaciones de múltiples features.
+
+Los \textbf{Sparse Autoencoders} (SAE)~\cite{bricken2023monosemanticity,cunningham2023sae} son una tecnología diseñada precisamente para desenredar esta superposición. La idea es entrenar un autoencoder con una capa oculta sobredimensionada y una activación escasa (típicamente ReLU o TopK) que descompone las activaciones densas del modelo en una combinación lineal de features monosemánticos.
+
+\section{Fundamento matemático}
+
+\subsection{El problema de la superposición}
+
+Consideremos un espacio de activaciones $\mathbb{R}^d$ donde el modelo representa $m \gg d$ features. La teoría de \emph{toy models}~\cite{elhage2022superposition} muestra que, cuando las features son escasas (cada feature aparece en una fracción pequeña de los inputs), el modelo puede ``comprimir'' más de $d$ features en $d$ dimensiones mediante combinaciones lineales casi ortogonales.
+
+La superposición implica que las interpretaciones a nivel de neurona individual son inherentemente limitadas: cada neurona responde a una mezcla de features, y cada feature se distribuye entre varias neuronas.
+
+\subsection{Arquitectura del SAE}
+
+Un SAE es un autoencoder con una sola capa oculta que tiene más dimensiones que la entrada ($F \gg d$):
+
+\begin{align*}
+\text{Encoder:}&\quad \mathbf{f}(\mathbf{x}) = \text{ReLU}\big(\mathbf{W}_{\text{enc}}(\mathbf{x} - \mathbf{b}_{\text{pre}}) + \mathbf{b}_{\text{enc}}\big) \in \mathbb{R}^F \\
+\text{Decoder:}&\quad \hat{\mathbf{x}} = \mathbf{W}_{\text{dec}} \cdot \mathbf{f}(\mathbf{x}) + \mathbf{b}_{\text{pre}} \in \mathbb{R}^d
+\end{align*}
+
+donde $\mathbf{x} \in \mathbb{R}^d$ son las activaciones del modelo, $\mathbf{f} \in \mathbb{R}^F$ son las activaciones de los features latentes (con $F \gg d$, típicamente $F = 8d$ a $64d$). La matriz $\mathbf{W}_{\text{dec}}$ tiene sus columnas normalizadas a norma unitaria para evitar degeneraciones.
+
+\subsection{Función de pérdida}
+
+La función de pérdida combina fidelidad de reconstrucción con esparcidad:
+
+\[
+\mathcal{L} = \underbrace{\|\mathbf{x} - \hat{\mathbf{x}}\|_2^2}_{\text{pérdida de reconstrucción}} \;+\; \alpha \underbrace{\|\mathbf{f}(\mathbf{x})\|_1}_{\text{penalización L1}}
+\]
+
+El término L1 fuerza a que la mayoría de los features latentes estén inactivos (cercanos a cero) para cualquier input dado, mientras que el término de reconstrucción asegura que los features activos capturen información suficiente para reconstruir $\mathbf{x}$.
+
+\subsection{Variante: TopK SAE}
+
+Una alternativa a la penalización L1 es el SAE con activación TopK~\cite{gao2024topk}: en lugar de ReLU, se usa una activación que solo mantiene los $k$ valores más grandes:
+
+\[
+\mathbf{f}(\mathbf{x}) = \text{TopK}\big(\mathbf{W}_{\text{enc}}(\mathbf{x} - \mathbf{b}_{\text{pre}}) + \mathbf{b}_{\text{enc}}, k\big)
+\]
+
+Esto fuerza directamente que exactamente $k$ features estén activos por input, eliminando la necesidad de ajustar $\alpha$.
+
+\subsection{Entrenamiento}
+
+El entrenamiento sigue estos pasos:
+
+\begin{enumerate}
+    \item Recolectar un conjunto grande de activaciones del modelo objetivo (típicamente $10^7$--$10^9$ tokens) pasando texto por el modelo y capturando las activaciones en una capa específica.
+    \item Inicializar el SAE con pesos aleatorios y normalizar las columnas de $\mathbf{W}_{\text{dec}}$.
+    \item Entrenar con Adam, típicamente con learning rate $10^{-3}$ a $10^{-4}$.
+    \item \textbf{Resampling}: periódicamente (cada ~1000 pasos), reemplazar features latentes que nunca se activan (muertos) con nuevas direcciones aleatorias.
+    \item Para el SAE con L1, ajustar $\alpha$ para lograr una esparcidad objetivo (típicamente $\sim$1--10\% de features activos por input).
+\end{enumerate}
+
+\subsection{Features muertas}
+
+Un problema persistente es que una fracción sustancial de los features latentes nunca se activan (hasta 65\% en entrenamientos grandes). Esto representa capacidad desperdiciada. Las técnicas para mitigarlo incluyen el resampling periódico, la inicialización data-driven, y normalización dinámica de gradientes.
+
+\section{Ejemplo práctico}
+
+Entrenamos un SAE con $d = 768$ (como la dimensión de GPT-2 Small) y $F = 16 \times 768 = 12\,288$ features latentes. Tras entrenar con $10^8$ tokens, inspeccionamos los features que se activan:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{ID Feature} & \textbf{Tipos de texto que activan} & \textbf{Interpretación} \\
+\midrule
+47 & \texttt{``...in Python...''}, \texttt{``...in Java...''} & Código de programación \\
+312 & \texttt{``She said...''}, \texttt{``He exclaimed...''} & Verbos de habla \\
+891 & \texttt{``...with $\pm$...''}, \texttt{``...approximately...''} & Aproximación numérica \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Cada feature es notablemente más monosemántico que las neuronas individuales del modelo base.
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Costo computacional}: entrenar SAEs requiere cantidades ingentes de datos y recursos. El estudio de \emph{Scaling Monosemanticity}~\cite{templeton2024scalingmono} usó 4 millones de horas de TPU para entrenar SAEs en Claude 3 Sonnet.
+    \item \textbf{Features muertas}: capacidad desperdiciada que requiere resampling.
+    \item \textbf{Hiperparámetros sensibles}: $\alpha$ (L1), $k$ (TopK), $F/d$ requieren ajuste cuidadoso.
+    \item \textbf{Interpretabilidad imperfecta}: no todos los features latentes son interpretables para los humanos. Muchos permanecen opacos incluso tras inspección manual.
+    \item \textbf{Superposición entre capas}: los features del SAE capturan features en una capa concreta, pero los features pueden estar distribuidos entre múltiples capas.
+    \item \textbf{Ambigüedad fundamental}: los features del SAE son soluciones a un problema de optimización. No hay garantía de que sean los ``verdaderos'' features del modelo~\cite{makelov2024saeidentity}.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 5 — AUTOMATED FEATURE EXPLANATION
+% ============================================================
+\chapter{Automated Feature Explanation}
+\label{ch:auto-feat}
+
+\section{Problema que resuelve}
+
+Una vez que hemos entrenado un SAE y obtenido cientos o miles de features latentes, necesitamos entender qué representa cada uno. La inspección manual es inviable a escala: ¿cómo etiquetar 12\,288 features?
+
+La \textbf{Automated Feature Explanation}~\cite{bills2023automatedexplanation}, propuesta por OpenAI en 2023, ofrece una solución: usar un LLM (en su caso GPT-4) para generar y evaluar automáticamente explicaciones en lenguaje natural de cada feature.
+
+\section{El pipeline de tres fases}
+
+\subsection{Fase 1: Generación de explicación}
+
+Para cada feature $f$, se recopilan los 10 textos del conjunto de validación que más activan ese feature. Dado que cada feature puede activarse en múltiples contextos, se toman los $k$ textos con mayor $\mathbf{f}(\mathbf{x})$.
+
+Estos 10 textos se presentan a GPT-4 con el siguiente prompt estructurado:
+
+\begin{lstlisting}
+Estamos estudiando una neurona en un modelo de lenguaje.
+Estos son los textos que más activan esta neurona:
+[texto fragmentado 1]
+[texto fragmentado 2]
+...
+[texto fragmentado 10]
+¿Qué tienen en común estos textos? Explica
+brevemente qué detecta esta neurona.
+\end{lstlisting}
+
+GPT-4 produce una explicación como ``detectar verbos en pasado'' o ``identificar referencias a código Python''.
+
+\subsection{Fase 2: Simulación}
+
+La misma explicación se usa para predecir activaciones en textos nuevos. Se presenta a GPT-4:
+
+\begin{lstlisting}
+Explicación de la neurona: "detecta verbos en pasado"
+¿Se activaría esta neurona en el siguiente texto?
+Texto: "Yesterday, she walked to the store"
+Respuesta (Sí/No):
+\end{lstlisting}
+
+GPT-4 responde ``Sí'' o ``No'' para cada texto de un conjunto de validación.
+
+\subsection{Fase 3: Puntuación}
+
+Se compara la predicción de GPT-4 con la activación real del feature. Si la activación real está en el top-$k$ de activaciones del batch, se considera un ``Sí''; en caso contrario, ``No''. La puntuación es:
+
+\[
+\text{Score} = \max\big(0, \text{Precisión}_{\text{GPT}} - \text{Precisión}_{\text{mayoritaria}}\big)
+\]
+
+donde $\text{Precisión}_{\text{mayoritaria}}$ es una línea base (siempre predecir la clase más frecuente). Una puntuación significativamente positiva indica que la explicación captura información genuina sobre el comportamiento del feature.
+
+\section{Resultados empíricos}
+
+Bills et al.~\cite{bills2023automatedexplanation} aplicaron este pipeline a GPT-2 y GPT-4 (como modelo fuente y como modelo explicador), obteniendo:
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Modelo fuente} & \textbf{Features explicables} & \textbf{Score medio} & \textbf{Correlación con humanos} \\
+\midrule
+GPT-2 Small (MLP) & 95\% & 0.35 & 0.70 \\
+GPT-4 (Early SAEs) & 69\% & 0.28 & 0.65 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Es importante notar que ``explicable'' no significa que la explicación sea completa o causalmente precisa, solo que captura algún aspecto sistemático del comportamiento del feature.
+
+\section{Ejemplo práctico}
+
+Consideremos un feature que se activa fuertemente en estos textos:
+
+\begin{itemize}
+    \item \texttt{``...no one knows how the story actually ended...''}
+    \item \texttt{``...they eventually admitted the truth...''}
+    \item \texttt{``...she finally found out what happened...''}
+\end{itemize}
+
+GPT-4 genera la explicación: ``Detecta adverbios de tiempo que indican resolución o descubrimiento (actually, eventually, finally).''
+
+En textos de validación nuevos:
+\begin{itemize}
+    \item \texttt{``He \textbf{finally} understood the problem''} $\rightarrow$ predice: Sí, activación real: Sí.
+    \item \texttt{``The sky is blue today''} $\rightarrow$ predice: No, activación real: No.
+\end{itemize}
+
+Score obtenido: 0.42 (significativo).
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Dependencia del LLM explicador}: la calidad de las explicaciones depende críticamente de la capacidad del LLM. GPT-4 es caro de ejecutar; modelos más pequeños dan explicaciones muy inferiores.
+    \item \textbf{Simulación imperfecta}: predecir activaciones a partir de una explicación textual es una tarea difícil, incluso para LLMs avanzados.
+    \item \textbf{Falsos positivos}: una explicación puede obtener buena puntuación por razones espurias (ej., porque el LLM usa atajos lingüísticos en lugar de comprender realmente el feature).
+    \item \textbf{Explicaciones incompletas}: la explicación generada puede capturar solo un aspecto del feature. Los features polisemánticos reciben explicaciones parciales.
+    \item \textbf{Sin verificación causal}: las explicaciones son correlacionales: describen qué correlaciona con el feature, no qué lo causa ni qué causan las manipulaciones del feature~\cite{makelov2024saeidentity}.
+    \item \textbf{Cobertura incompleta}: no todos los features son explicables. Los features con activación baja o ruidosa son difíciles de caracterizar.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 6 — MEAN ABLATION
+% ============================================================
+\chapter{Mean Ablation}
+\label{ch:mean-ablation}
+
+\section{Problema que resuelve}
+
+Una vez que sospechamos que un componente del modelo (una cabeza de atención, una neurona FFN, una capa completa) es importante para una tarea, necesitamos una forma de \emph{verificar} experimentalmente esa importancia. ¿Qué le pasa al modelo si eliminamos ese componente?
+
+La \textbf{Mean Ablation}~\cite{wang2022ioi} es una técnica de intervención que reemplaza la activación de un componente por su valor medio calculado sobre un conjunto de referencia. Si el modelo deja de funcionar correctamente tras la ablación, concluimos que el componente es causalmente relevante.
+
+\section{Fundamento matemático}
+
+\subsection{Definición}
+
+Sea $f(\mathbf{x})$ la activación de un componente (ej., la salida de una cabeza de atención) cuando el modelo procesa el input $\mathbf{x}$. Definimos el conjunto de referencia $\mathcal{D}_{\text{ref}}$ como un conjunto de textos donde el comportamiento del modelo es típico.
+
+La activación ablacionada es:
+
+\[
+f_{\text{abl}}(\mathbf{x}) = \mathbb{E}_{\mathbf{x}' \sim \mathcal{D}_{\text{ref}}}\big[f(\mathbf{x}')\big]
+\]
+
+es decir, la media empírica sobre $\mathcal{D}_{\text{ref}}$.
+
+\subsection{Propiedades}
+
+La Mean Ablation tiene propiedades específicas que la distinguen de otras formas de ablación:
+
+\begin{itemize}
+    \item \textbf{Preserva la escala}: la activación reemplazada tiene una magnitud típica (la media), a diferencia de ponerla a cero (zero-ablation).
+    \item \textbf{Elimina la información específica del input}: al reemplazar $f(\mathbf{x})$ por un valor constante, eliminamos cualquier información que el componente estuviera aportando sobre $\mathbf{x}$.
+    \item \textbf{Sesgo hacia activaciones típicas}: si la distribución de $f(\mathbf{x})$ es multimodal, la media puede no ser representativa.
+\end{itemize}
+
+\subsection{Aplicación: el circuito IOI}
+
+Wang et al.~\cite{wang2022ioi} usaron Mean Ablation para descubrir el circuito de Identificación de Objeto Indirecto (IOI) en GPT-2 Small. En la tarea IOI, el modelo recibe una frase como:
+
+\begin{center}
+\texttt{``Mary and John went to the store. John gave a gift to''}
+\end{center}
+
+y debe predecir \texttt{Mary} (el objeto indirecto, no el sujeto de la segunda cláusula).
+
+Ablacionando cabezas de atención una por una, encontraron que:
+
+\begin{itemize}
+    \item Las cabezas \texttt{S-Inhibition} (posiciones 10.7, 11.10) reducían la probabilidad de ``Mary'' en $\sim$40\% cuando se ablacionaban.
+    \item Las cabezas \texttt{Duplicate Token} (posiciones 0.1, 0.2) eran responsables de detectar tokens duplicados.
+    \item El ablandamiento del circuito completo requería ablacionar simultáneamente unas 13 cabezas de atención y 2 capas MLP.
+\end{itemize}
+
+\section{Ejemplo práctico}
+
+Supongamos que estamos analizando un modelo que suma dos números de 2 cifras. Queremos saber si la cabeza de atención en la capa~4, posición~7 es importante para acarrear la decena.
+
+\begin{enumerate}
+    \item Calculamos la activación media de esa cabeza sobre 10\,000 sumas aleatorias.
+    \item Cuando el modelo procesa ``57 + 38'', intervenimos la cabeza de atención en la capa~4, posición~7, reemplazando su salida por la media.
+    \item Observamos que la precisión del modelo baja del 95\% al 60\% en sumas con acarreo, pero se mantiene en sumas sin acarreo.
+    \item Conclusión: esa cabeza es causalmente relevante para el acarreo.
+\end{enumerate}
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Dependencia del conjunto de referencia}: la media calculada depende del conjunto de textos usado. Si $\mathcal{D}_{\text{ref}}$ no es representativo, la ablación puede ser engañosa.
+    \item \textbf{Pérdida de información distribucional}: al reemplazar por un valor constante, ignoramos la varianza natural del componente. Un componente puede ser importante precisamente porque su activación varía entre inputs.
+    \item \textbf{Efectos de segundo orden}: la ablación de un componente puede afectar a otros componentes corriente arriba, produciendo efectos indirectos difíciles de desenredar.
+    \item \textbf{Componentes redundantes}: si varios componentes son funcionalmente equivalentes, ablacionar uno solo no produce efecto apreciable (falso negativo).
+    \item \textbf{No es adecuada para componentes no lineales}: si el componente tiene una función de activación no lineal, reemplazar su salida por la media puede producir efectos inesperados.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 7 — PATH PATCHING
+% ============================================================
+\chapter{Path Patching}
+\label{ch:path-patching}
+
+\section{Problema que resuelve}
+
+La Mean Ablation nos dice si un componente individual es importante. Pero en un transformer, los componentes interactúan formando \emph{rutas computacionales}. Por ejemplo, una cabeza de atención en la capa~5 escribe en el residual stream, que luego es leído por la capa FFN en la capa~6, que a su vez influye en la cabeza de atención en la capa~7. ¿Podemos aislar el efecto de esta ruta específica, independientemente de otras rutas paralelas?
+
+El \textbf{Path Patching}~\cite{wang2022ioi,goldowsky2023pathpatching} responde a esta pregunta. Es una técnica de intervención causal que permite aislar el efecto de una ruta específica entre componentes del modelo, manteniendo el resto del cómputo intacto.
+
+\section{Fundamento matemático}
+
+\subsection{Configuración experimental}
+
+El Path Patching requiere dos ejecuciones del modelo (forward passes):
+
+\begin{enumerate}
+    \item \textbf{Forward ``clean''}: el modelo procesa el input original $\mathbf{x}_{\text{clean}}$ y produce la predicción normal.
+    \item \textbf{Forward ``corrupted''}: el modelo procesa un input alterado $\mathbf{x}_{\text{corrupted}}$ donde se ha cambiado algún aspecto del input (ej., se ha modificado el sujeto de la frase).
+\end{enumerate}
+
+Se registran todas las activaciones intermedias de ambos forwards.
+
+\subsection{El procedimiento de patching}
+
+Para aislar la ruta del nodo $A$ al nodo $B$ (donde $A$ y $B$ son componentes como cabezas de atención o capas FFN), realizamos un tercer forward:
+
+\begin{enumerate}
+    \item Partimos del input corrupto $\mathbf{x}_{\text{corrupted}}$.
+    \item En el punto donde el nodo $A$ produce su salida, forzamos esa activación al valor que tenía en el forward clean (es decir, escribimos $A_{\text{clean}}$ en lugar de $A_{\text{corrupted}}$).
+    \item Esto significa que $A$ recibe input corrupto pero produce la salida que tendría con input limpio.
+    \item En el nodo $B$, leemos la activación correspondiente (que ahora será diferente porque su entrada ha cambiado).
+    \item Medimos cuánto se acerca la predicción final a la del forward clean.
+\end{enumerate}
+
+Formalmente, definimos el \textbf{Efecto Indirecto} (IE) de la ruta $A \to B$ como:
+
+\[
+IE_{A \to B} = p(\text{clean} \mid \mathbf{x}_{\text{corrupted}} \text{ con } A_{\text{clean}} \text{ parcheado en } B) - p(\text{clean} \mid \mathbf{x}_{\text{corrupted}})
+\]
+
+\subsection{Tipos de Path Patching}
+
+Existen dos variantes principales:
+
+\begin{enumerate}
+    \item \textbf{Activación patching}: actúa sobre las activaciones del componente $A$ (es decir, su salida). Es la variante descrita arriba.
+    \item \textbf{Gradiente patching}: actúa sobre el gradiente de la pérdida respecto a las activaciones de $A$. Es computacionalmente más eficiente pero menos directo.
+\end{enumerate}
+
+\section{Ejemplo práctico: el circuito IOI}
+
+Wang et al.~\cite{wang2022ioi} aplicaron Path Patching para confirmar la arquitectura del circuito IOI.
+
+Consideremos la frase:
+\begin{itemize}
+    \item $\mathbf{x}_{\text{clean}}$: ``Mary and John went to the store. John gave a gift to''
+    \item $\mathbf{x}_{\text{corrupted}}$: ``Mary and John went to the store. Alice gave a gift to''
+\end{itemize}
+
+En el forward clean, el modelo predice ``Mary''. En el forward corrupto (cambiando John $\to$ Alice en la segunda cláusula), el modelo predice ``Alice'' (porque el objeto indirecto en la frase limpia era ``Mary'' pero ahora es ``Alice''... en realidad predeciría ``Mary'' porque Mary sigue siendo el indirect object en la frase original... veamos con cuidado).
+
+En la tarea IOI, la estructura es: ``[A] and [B] went to the store. [B] gave a gift to'' $\rightarrow$ predecir [A].
+
+Si corrompemos a: ``[A] and [B] went to the store. [C] gave a gift to'' $\rightarrow$ el modelo predecirá algo diferente.
+
+Path Patching permite preguntar: ``¿la ruta desde la cabeza \texttt{Duplicate Token} (que detecta que [B] aparece dos veces) hasta la cabeza \texttt{S-Inhibition} (que suprime la predicción de [B]) es causalmente relevante?''
+
+La respuesta experimental es sí: parcheando esta ruta se restaura la predicción correcta incluso con input corrupto.
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Costo computacional}: cada Path Patching requiere $\mathcal{O}(L^2)$ forwards en el peor caso, donde $L$ es el número de componentes.
+    \item \textbf{Linealidad asumida}: el Path Patching asume que los efectos de las rutas son aproximadamente lineales y aditivos, lo que no siempre es cierto en transformers reales.
+    \item \textbf{Elección de puntos de intervención}: la elección de $A$ y $B$ requiere hipótesis previas. No es un método de descubrimiento sino de verificación.
+    \item \textbf{Interacciones entre rutas}: las rutas pueden tener efectos no aditivos, haciendo que intervenciones independientes no revelen el panorama completo.
+    \item \textbf{Definición de ``ruta''}: en transformers, prácticamente todo el cómputo confluye en el residual stream, lo que hace difícil aislar rutas verdaderamente independientes.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 8 — RANDOM ABLATION
+% ============================================================
+\chapter{Random Ablation}
+\label{ch:random-ablation}
+
+\section{Problema que resuelve}
+
+La Mean Ablation reemplaza una activación por su media. Pero la media puede no ser representativa de la distribución real de activaciones. Si la activación de un componente tiene alta varianza, reemplazarla por un valor constante introduce un artefacto que puede distorsionar el comportamiento del modelo.
+
+La \textbf{Random Ablation}~\cite{redwood2022causalscrubbing} ofrece una alternativa: en lugar de usar un valor constante, se reemplaza la activación por la activación del \emph{mismo componente} en otro input aleatorio del conjunto de referencia. Esto preserva las propiedades distribucionales de la activación (media, varianza y correlaciones con otros componentes), eliminando solo el acoplamiento causal entre el input y esa activación.
+
+\section{Fundamento matemático}
+
+\subsection{Definición}
+
+Sea $f(\mathbf{x})$ la activación de un componente para input $\mathbf{x}$. Elegimos un input aleatorio $\mathbf{x}_\text{ref} \sim \mathcal{D}_\text{ref}$ y definimos:
+
+\[
+f_{\text{rand}}(\mathbf{x}) = f(\mathbf{x}_{\text{ref}})
+\]
+
+La clave es que $\mathbf{x}_{\text{ref}}$ se elige independientemente de $\mathbf{x}$ y de forma aleatoria.
+
+\subsection{Propiedades deseables}
+
+La Random Ablation tiene propiedades estadísticas superiores a la Mean Ablation:
+
+\begin{itemize}
+    \item \textbf{Preserva la varianza}: la activación reemplazada tiene la misma varianza que la original.
+    \item \textbf{Preserva correlaciones}: si $f$ está correlacionada con otros componentes $g$, la correlación se mantiene (aunque ahora es espuria), evitando artefactos.
+    \item \textbf{Distribución realista}: cada muestra de ablación procede de una activación que realmente ocurrió, no de un valor sintético.
+\end{itemize}
+
+\subsection{Promedio sobre múltiples ablaciones}
+
+Para obtener una estimación robusta, se repite la Random Ablation $N$ veces con diferentes inputs aleatorios y se promedia el efecto:
+
+\[
+\overline{\text{Efecto}} = \frac{1}{N} \sum_{i=1}^N \big[p(\text{clean} \mid \mathbf{x} \text{ con } f_{\text{rand}_i}) - p(\text{clean} \mid \mathbf{x})\big]
+\]
+
+\section{Comparación: Mean Ablation vs. Random Ablation}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Propiedad} & \textbf{Mean Ablation} & \textbf{Random Ablation} \\
+\midrule
+Valor de reemplazo & $\mathbb{E}[f]$ & $f(\mathbf{x}_{\text{ref}})$ \\
+Preserva media & Sí & En expectativa \\
+Preserva varianza & No & Sí \\
+Preserva correlaciones & No & Sí \\
+Costo (por ablación) & Bajo (1 forward) & Medio ($N$ forwards) \\
+Adecuado para componentes con alta varianza & No & Sí \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Ejemplo práctico}
+
+Para ilustrar la diferencia, consideremos un componente cuya activación tiene una distribución bimodal: $f(\mathbf{x}) \in \{-1, 1\}$ con igual probabilidad. La media es 0, pero el componente solo tiene efecto cuando su activación es $\pm 1$ (no cuando es 0, que nunca ocurre naturalmente).
+
+\begin{itemize}
+    \item \textbf{Mean Ablation}: reemplaza por 0. El modelo se comporta como si el componente estuviera en un estado que nunca ocurre en la práctica. Esto puede producir efectos artificiales.
+    \item \textbf{Random Ablation}: reemplaza por $-1$ o $1$ aleatoriamente. El modelo se comporta como si el componente hubiera recibido un input diferente, pero con activaciones realistas.
+\end{itemize}
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Dependencia del conjunto de referencia}: al igual que Mean Ablation, el conjunto $\mathcal{D}_{\text{ref}}$ debe ser representativo.
+    \item \textbf{Varianza de la estimación}: para obtener estimaciones precisas, se necesitan múltiples muestras aleatorias, aumentando el costo computacional.
+    \item \textbf{Correlaciones espurias mantenidas}: aunque preserva correlaciones de la distribución original, la correlación con el input específico se pierde. Si dos componentes covarían con el input pero son causalmente independientes, Random Ablation puede preservar artefactos.
+    \item \textbf{No es adecuada para componentes pequeños}: si la varianza del componente es muy pequeña, Random Ablation se aproxima a Mean Ablation pero con ruido adicional.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 9 — CAUSAL SCRUBBING
+% ============================================================
+\chapter{Causal Scrubbing}
+\label{ch:causal-scrubbing}
+
+\section{Problema que resuelve}
+
+Las técnicas de ablación que hemos visto hasta ahora verifican hipótesis sobre componentes individuales o rutas. Pero las hipótesis interpretativas completas---``el circuito $C$ implementa el comportamiento $B$''---son más complejas: involucran múltiples componentes, interacciones y condiciones.
+
+El \textbf{Causal Scrubbing}~\cite{redwood2022causalscrubbing,geiger2023causalscrubbing} es un framework formal para verificar hipótesis interpretativas completas. Proporciona un protocolo para determinar si una hipótesis es causalmente fiel al modelo, y una métrica cuantitativa de ``qué parte del comportamiento explica la hipótesis''.
+
+\section{Fundamento matemático}
+
+\subsection{La hipótesis como grafo}
+
+Una hipótesis interpretativa $H$ se representa como un \emph{grafo causal} sobre las activaciones del modelo. Los nodos del grafo son variables (activaciones de componentes) y las aristas representan dependencias causales entre ellas.
+
+Formalmente, $H$ especifica:
+
+\begin{enumerate}
+    \item Una partición de cada activación en subcomponentes (ej., descomponer la salida de una cabeza de atención en contribuciones de cada token de entrada).
+    \item Las dependencias causales entre esos subcomponentes: qué subcomponentes influyen en qué otros.
+    \item Un conjunto de \emph{condiciones de resampling}: para cada subcomponente, cuándo se puede reemplazar por el valor de otro input.
+\end{enumerate}
+
+\subsection{El procedimiento de scrubbing}
+
+El Causal Scrubbing se ejecuta como sigue:
+
+\begin{enumerate}
+    \item Partimos del input original $\mathbf{x}_{\text{clean}}$.
+    \item Seleccionamos un conjunto de inputs de referencia $\mathcal{D}_{\text{ref}}$.
+    \item Para cada subcomponente $s$ en $H$:
+    \begin{enumerate}
+        \item Si $s$ es independiente de la predicción según $H$, su activación se reemplaza por la de un input aleatorio $\mathbf{x}_{\text{ref}}$.
+        \item Si $s$ depende de algún otro subcomponente $s'$, se usa el input que fue seleccionado para $s'$ (resampling condicional).
+    \end{enumerate}
+    \item Medimos la métrica de interés (ej., log-probabilidad de la respuesta correcta) en el modelo ``scrubbed''.
+\end{enumerate}
+
+\subsection{Resampling condicional}
+
+La clave de Causal Scrubbing es el \textbf{resampling condicional}. En lugar de reemplazar activaciones con valores fijos o aleatorios independientes, se usa un procedimiento recursivo:
+
+\begin{algoritmo}[Resampling condicional]
+\label{alg:resampling}
+Para cada subcomponente $s$:
+\begin{enumerate}
+    \item Identificar los subcomponentes ancestros de $s$ según $H$.
+    \item Para cada ancestro $a$, obtener el input $\mathbf{x}_a$ que se usó para resamplear $a$.
+    \item Si todos los ancestros usan el mismo input $\mathbf{x}'$, entonces resamplear $s$ usando $\mathbf{x}'$.
+    \item Si los ancestros usan diferentes inputs, hay un conflicto: la hipótesis $H$ es incompleta o incorrecta para este ejemplo.
+\end{enumerate}
+
+\end{algoritmo}
+
+Si el modelo scrubbed preserva la predicción original, la hipótesis es causalmente fiel. Si el modelo falla, la hipótesis es incorrecta o incompleta.
+
+\section{Métrica: \emph{Recovered Log-Probability}}
+
+La métrica principal de Causal Scrubbing es la \emph{recovered log-probability}:
+
+\[
+\text{RLP}(H) = \frac{\log p_{\text{scrubbed}}(y \mid x) - \log p_{\text{baseline}}(y \mid x)}{\log p_{\text{clean}}(y \mid x) - \log p_{\text{baseline}}(y \mid x)}
+\]
+
+donde $p_{\text{baseline}}$ es la probabilidad del token correcto bajo la distribución marginal (sin información del input). RLP $= 1$ significa que la hipótesis explica todo el comportamiento; RLP $= 0$ significa que no explica nada.
+
+\section{Ejemplo práctico}
+
+Consideremos una hipótesis simple sobre el circuito IOI: ``La predicción de \texttt{Mary} depende únicamente de la cabeza \texttt{Duplicate Token} L0H0 y la cabeza \texttt{S-Inhibition} L10H7''.
+
+\begin{enumerate}
+    \item Ejecutamos Causal Scrubbing con esta hipótesis sobre la frase ``Mary and John went to the store. John gave a gift to''.
+    \item El resampling condicional reemplaza todas las demás activaciones por valores de inputs aleatorios.
+    \item Si obtenemos RLP $> 0.9$, la hipótesis es esencialmente correcta: esas dos cabezas son las únicas relevantes.
+    \item Si obtenemos RLP $< 0.3$, la hipótesis es insuficiente: hay otros componentes importantes que no hemos considerado.
+\end{enumerate}
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Complejidad exponencial}: el árbol de resampling puede crecer exponencialmente con el número de subcomponentes.
+    \item \textbf{Formulación de hipótesis costosa}: especificar una hipótesis completa en el formato de Causal Scrubbing es laborioso.
+    \item \textbf{Conflictos de resampling}: es común encontrar conflictos donde los ancestros usan diferentes inputs, lo que indica que la hipótesis necesita refinamiento.
+    \item \textbf{Hipótesis atómicas}: el framework asume que los subcomponentes son independientes y sus efectos aditivos, lo que puede no ser cierto.
+    \item \textbf{Cobertura}: incluso con RLP alto, la hipótesis puede estar perdiendo detalles finos que solo se manifiestan en ejemplos concretos.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 10 — ACTIVATION PATCHING
+% ============================================================
+\chapter{Activation Patching}
+\label{ch:activation-patching}
+
+\section{Problema que resuelve}
+
+Hasta ahora, las técnicas de intervención que hemos visto (Mean Ablation, Path Patching) requieren una hipótesis específica sobre qué componente es importante. Pero a menudo queremos \emph{descubrir} qué componentes son relevantes para una tarea sin hipótesis previas---una tarea de localización.
+
+El \textbf{Activation Patching} (también llamado \emph{Causal Tracing} en la literatura)~\cite{meng2022rome} es una técnica de localización causal que sistemáticamente interviene cada componente del modelo para medir su contribución individual a la predicción.
+
+\section{Fundamento matemático}
+
+\subsection{Configuración experimental}
+
+Al igual que en Path Patching, el Activation Patching requiere dos estados del modelo:
+
+\begin{enumerate}
+    \item \textbf{Forward clean}: $\mathbf{x}_{\text{clean}}$ produce la predicción $p_{\text{clean}}$.
+    \item \textbf{Forward corrupted}: $\mathbf{x}_{\text{corrupted}}$ produce $p_{\text{corrupted}}$.
+\end{enumerate}
+
+La diferencia crucial es que ahora intervenimos \emph{cada activación por separado}, midiendo el \textbf{Efecto Indirecto Total} (TIE) de cada una.
+
+\subsection{Procedimiento paso a paso}
+
+Para una activación específica $a_{l,c}^{(t)}$ (en capa $l$, componente $c$, posición de token $t$):
+
+\begin{enumerate}
+    \item Ejecutamos el forward con input corrupto.
+    \item En el momento en que se calcula $a_{l,c}^{(t)}$, reemplazamos su valor por el que tenía en el forward clean.
+    \item Continuamos el forward hasta la salida.
+    \item Medimos cómo cambia la probabilidad del token correcto.
+\end{enumerate}
+
+Este procedimiento se repite para cada activación de interés, requiriendo $\mathcal{O}(L \times C \times T)$ forwards, donde $L$ es el número de capas, $C$ el número de componentes por capa y $T$ la longitud de la secuencia.
+
+\subsection{Efecto Indirecto Total}
+
+El TIE de la activación $a$ se define como:
+
+\[
+\text{TIE}(a) = p_{\text{clean}} \mid_{\text{do}(a = a_{\text{clean}}), \text{input}=x_{\text{corrupted}}} - p_{\text{corrupted}}
+\]
+
+Un TIE alto indica que la activación es causalmente importante: restaurarla en un contexto corrupto recupera la predicción original.
+
+\section{Aplicación: ROME (Model Editor)}
+
+Meng et al.~\cite{meng2022rome} usaron Activation Patching para localizar las activaciones responsables de almacenar hechos factuales en GPT-2 XL. Descubrieron que:
+
+\begin{itemize}
+    \item Las capas FFN medias (capas 11--17 en GPT-2 XL de 48 capas) son las que almacenan información factual.
+    \item Una sola capa FFN (típicamente alrededor del 30--40\% de la profundidad del modelo) es responsable del hecho.
+    \item Activando esta capa FFN en modo clean mientras el resto del modelo recibe input corrupto, se recupera la predicción correcta.
+\end{itemize}
+
+Basándose en este hallazgo, desarrollaron \textbf{ROME} (Rank-One Model Editing): un método para editar hechos factuales modificando directamente los pesos de la capa FFN localizada.
+
+\section{Ejemplo práctico}
+
+Queremos saber qué capas almacenan el hecho ``La capital de España es Madrid''.
+
+\begin{enumerate}
+    \item $\mathbf{x}_{\text{clean}}$: ``La capital de España es'' $\rightarrow$ modelo predice ``Madrid'' ($p \approx 0.85$).
+    \item $\mathbf{x}_{\text{corrupted}}$: ``La capital de Francia es'' $\rightarrow$ modelo predice ``París'' ($p \approx 0.90$).
+    \item Para cada capa $l$, intervenimos las activaciones FFN:
+    \begin{itemize}
+        \item Capa 8: TIE $\approx 0.01$ (sin efecto).
+        \item Capa 12: TIE $\approx 0.65$ (¡efecto grande!).
+        \item Capa 16: TIE $\approx 0.02$.
+    \end{itemize}
+    \item Conclusión: la capa 12 es donde se almacena el hecho ``España $\to$ Madrid''.
+\end{enumerate}
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Costo computacional prohibitivo}: para un modelo con $L=96$ capas (como PaLM), $C=4$ componentes (atención + FFN) y $T=1024$ tokens, se necesitan $\sim 400\,000$ forwards para cubrir todas las activaciones.
+    \item \textbf{Intervenciones independientes}: el Activation Patching analiza cada activación por separado, ignorando interacciones entre componentes.
+    \item \textbf{Linealidad}: el TIE asume que los efectos son aproximadamente lineales, lo que puede no ser cierto para transformaciones no lineales como softmax.
+    \item \textbf{Elección de input corrupto}: el TIE depende críticamente de cómo se corrompa el input. Diferentes corrupciones pueden producir diferentes mapas de importancia.
+    \item \textbf{Redundancia}: si varios componentes son funcionalmente equivalentes, el TIE individual de cada uno puede ser bajo porque el resto compensa.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 11 — ACDC
+% ============================================================
+\chapter{ACDC (Automatic Circuit DisCovery)}
+\label{ch:acdc}
+
+\section{Problema que resuelve}
+
+El Activation Patching y el Path Patching requieren intervenir cada componente manualmente y analizar los resultados. Para modelos con miles de componentes, esto es inviable manualmente.
+
+\textbf{ACDC} (Automatic Circuit DisCovery)~\cite{conmy2023acdc} automatiza este proceso. Dado un modelo y una tarea, ACDC descubre automáticamente el subgrafo de componentes (el \emph{circuito}) que es causalmente relevante para la tarea.
+
+\section{Fundamento matemático}
+
+\subsection{El algoritmo}
+
+ACDC es un algoritmo recursivo que itera desde la salida del modelo hacia la entrada. El pseudocódigo es:
+
+\begin{algoritmo}[ACDC]
+\label{alg:acdc}
+\begin{lstlisting}[language=Python]
+def acdc(model, input_clean, input_corrupt, threshold):
+    # 1. Ejecutar forwards clean y corrupto
+    clean_cache = model.run_with_cache(input_clean)
+    corrupt_cache = model.run_with_cache(input_corrupt)
+    
+    # 2. Definir el grafo computacional completo
+    full_graph = build_computation_graph(model)
+    
+    # 3. Descubrimiento recursivo
+    def recursive_prune(node, graph):
+        for child in node.children:
+            # Mide el efecto de aislar child
+            effect = measure_effect(child, graph)
+            if effect < threshold:
+                graph.remove_edge(node, child)
+            else:
+                recursive_prune(child, graph)
+    
+    # 4. Empezar desde el nodo de salida
+    output_node = full_graph.get_output_node()
+    recursive_prune(output_node, full_graph)
+    return graph
+\end{lstlisting}
+\end{algoritmo}
+
+\subsection{Métrica de efecto}
+
+Para decidir si una arista (o nodo) debe mantenerse, ACDC usa una métrica basada en divergencia KL entre la distribución del modelo completo y la del subgrafo:
+
+\[
+\text{Efecto}(e) = D_{\text{KL}}\big(p_{\text{completo}} \mid\mid p_{\text{subgrafo} \setminus e}\big)
+\]
+
+Si eliminar la arista $e$ no aumenta significativamente la divergencia KL (por debajo de un umbral $\tau$), la arista se elimina permanentemente.
+
+\subsection{El umbral $\tau$}
+
+El umbral $\tau$ controla el equilibrio entre \emph{exhaustividad} (encontrar todas las aristas relevantes, pero con falsos positivos) y \emph{minimalidad} (encontrar solo las esenciales, pero con riesgo de falsos negativos). Conmy et al.~\cite{conmy2023acdc} proponen una búsqueda binaria sobre $\tau$ para maximizar:
+
+\[
+\mathcal{F}_1 = 2 \cdot \frac{\text{Precisión} \cdot \text{Recall}}{\text{Precisión} + \text{Recall}}
+\]
+
+donde la precisión y el recall se definen respecto al circuito de referencia descubierto manualmente.
+
+\section{Resultados empíricos}
+
+Conmy et al. aplicaron ACDC a GPT-2 Small en la tarea \emph{Greater-Than} (determinar si un número es mayor que otro):
+
+\begin{itemize}
+    \item El circuito descubierto manualmente tenía $\sim$68 aristas.
+    \item ACDC redescubrió 5 de 5 tipos de componentes del circuito manual.
+    \item Precisión: 89\%, Recall: 92\% respecto al ground truth manual.
+    \item El circuito completo del modelo tiene $\sim$32\,000 aristas. ACDC las redujo a $\sim$68 (reducción de 470$\times$).
+\end{itemize}
+
+\section{Ejemplo práctico}
+
+Para la tarea ``¿57 $>$ 38?'', el grafo computacional completo de GPT-2 Small tiene 32\,000 aristas. ACDC lo reduce a:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Componente} & \textbf{Rol en el circuito} \\
+\midrule
+Cabeza atención 3.0 & Mueve el operando izquierdo a la posición de resultado \\
+Cabeza atención 5.5 & Mueve el operando derecho a la posición de resultado \\
+FFN capa 7 & Compara los valores numéricos \\
+FFN capa 9 & Produce la decisión binaria \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+El resto de las ~32\,000 aristas son irrelevantes para esta tarea específica (aunque pueden ser importantes para otras tareas).
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Costo cuadrático en el peor caso}: ACDC requiere $\mathcal{O}(N^2)$ forwards en el peor caso, donde $N$ es el número de aristas.
+    \item \textbf{Dependencia del umbral}: la elección de $\tau$ afecta drásticamente los resultados. No hay una guía universal para elegirlo.
+    \item \textbf{Específico de una tarea}: el circuito descubierto es válido solo para la tarea y el conjunto de datos usado.
+    \item \textbf{Falsos negativos con componentes redundantes}: si dos componentes tienen la misma función, ACDC puede eliminar uno, que en realidad sí contribuye en otros contextos.
+    \item \textbf{No captura comportamientos emergentes}: el algoritmo asume una relación jerárquica entre componentes, que puede no reflejar comportamientos emergentes complejos.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 12 — ATTRIBUTION PATCHING
+% ============================================================
+\chapter{Attribution Patching}
+\label{ch:attribution-patching}
+
+\section{Problema que resuelve}
+
+El Activation Patching es el estándar de oro para medir la importancia causal de cada activación, pero su costo $\mathcal{O}(L \times C \times T)$ lo hace prohibitivo para modelos grandes. Por ejemplo, para Pythia-12B (40 capas, 20\,000 puntos de activación), Activation Patching requeriría semanas de cómputo.
+
+El \textbf{Attribution Patching} (AtP)~\cite{nanda2022attributionpatching} aborda este problema usando una aproximación de Taylor de primer orden. En lugar de intervenir cada activación individualmente, AtP estima el efecto de \emph{todas} las intervenciones simultáneamente con solo 3 pases (2 forwards + 1 backward).
+
+\section{Fundamento matemático}
+
+\subsection{La aproximación de Taylor}
+
+Sea $L(\mathbf{x})$ la función de pérdida del modelo y $\mathbf{e}$ el vector de todas las activaciones del modelo. Queremos medir el cambio en la pérdida cuando cambiamos las activaciones de su valor en el forward clean $\mathbf{e}_{\text{clean}}$ a su valor en el forward corrupto $\mathbf{e}_{\text{corrupt}}$:
+
+\[
+\Delta L = L(\mathbf{e}_{\text{corrupt}}) - L(\mathbf{e}_{\text{clean}})
+\]
+
+AtP aproxima esto con el desarrollo de Taylor de primer orden alrededor de $\mathbf{e}_{\text{clean}}$:
+
+\[
+\Delta L \approx \nabla_{\mathbf{e}} L(\mathbf{e}_{\text{clean}})^\top \cdot (\mathbf{e}_{\text{corrupt}} - \mathbf{e}_{\text{clean}})
+\]
+
+De esta forma, la contribución de cada activación individual $i$ es:
+
+\[
+\text{AtP}_i = \frac{\partial L}{\partial e_i}\bigg|_{\mathbf{e}_{\text{clean}}} \cdot \big(e_i^{(\text{corrupt})} - e_i^{(\text{clean})}\big)
+\]
+
+\subsection{Cómputo eficiente}
+
+AtP requiere solo:
+
+\begin{enumerate}
+    \item \textbf{Forward clean}: guardar $\mathbf{e}_{\text{clean}}$ y calcular $L(\mathbf{e}_{\text{clean}})$.
+    \item \textbf{Backward clean}: calcular $\nabla_{\mathbf{e}} L(\mathbf{e}_{\text{clean}})$.
+    \item \textbf{Forward corrupt}: guardar $\mathbf{e}_{\text{corrupt}}$.
+    \item \textbf{Producto elemento a elemento}: $\text{AtP}_i = (\nabla_{\mathbf{e}} L)_i \cdot \Delta e_i$.
+\end{enumerate}
+
+Todo esto se realiza en $\mathcal{O}(1)$ pases, independientemente del número de activaciones.
+
+\subsection{Interpretación intuitiva}
+
+Podemos entender AtP así: el gradiente $\partial L / \partial e_i$ nos dice qué tan sensible es la pérdida a cambios en la activación $e_i$. Si multiplicamos esa sensibilidad por cuánto cambió realmente la activación ($\Delta e_i$), obtenemos una estimación de cuánto contribuye $e_i$ al cambio total en la pérdida.
+
+\section{Fallos conocidos (y AtP*)}
+
+Kramár et al.~\cite{kramar2024atpstar} identificaron dos modos de fallo sistemáticos en AtP:
+
+\subsection{Fallo por saturación de softmax}
+
+Si la activación clean ya produce una probabilidad cercana a 1 (softmax saturado), el gradiente es cercano a cero y AtP subestima la importancia de esa activación.
+
+\textbf{Solución (QK-fix)}: recalcular explícitamente el softmax con queries y keys intervenidas, en lugar de usar el gradiente estándar.
+
+\subsection{Fallo por cancelación frágil}
+
+Si dos activaciones tienen efectos opuestos que se cancelan, AtP puede mostrar un efecto neto pequeño (sugiriendo que no son importantes), cuando en realidad ambas son críticas.
+
+\textbf{Solución (Dropout en backward)}: añadir dropout al backward pass para romper correlaciones espurias entre gradientes.
+
+\section{Ejemplo práctico}
+
+Queremos identificar las 10 activaciones más importantes para la tarea ``La capital de Francia es París'' vs. ``La capital de Alemania es Berlín''.
+
+\begin{enumerate}
+    \item Forward clean: ``La capital de Francia es'' $\rightarrow$ pérdida $L_{\text{clean}}$.
+    \item Backward: calcular $\nabla_{\mathbf{e}} L$ para todas las activaciones.
+    \item Forward corrupt: ``La capital de Alemania es'' $\rightarrow$ guardar $\mathbf{e}_{\text{corrupt}}$.
+    \item Calcular $\text{AtP}_i$ para todas las activaciones.
+    \item Ordenar por $|\text{AtP}_i|$ y seleccionar top-10.
+\end{enumerate}
+
+Resultado: las activaciones más importantes están en la FFN de la capa 12 y las cabezas de atención que procesan ``Francia'' y ``París''. AtP identificó estas en segundos, mientras que Activation Patching habría requerido minutos u horas.
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Aproximación lineal}: la precisión de AtP depende de cuán lineal sea el modelo en la región de interés. Los transformers tienen muchas no-linealidades (ReLU, softmax, atención), por lo que la aproximación puede ser pobre.
+    \item \textbf{Falsos negativos}: los fallos de saturación y cancelación pueden ocultar componentes importantes (AtP* los aborda parcialmente).
+    \item \textbf{Sin interacciones entre activaciones}: AtP ignora términos cruzados. Si dos activaciones interactúan de forma no lineal, AtP no las captura.
+    \item \textbf{Elección de la tarea}: la importancia de las activaciones depende críticamente de la elección del par clean/corrupt.
+    \item \textbf{No es un sustituto del patching real}: AtP es una aproximación. Para confirmación causal definitiva, se necesita Activation Patching.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 13 — EDGE ATTRIBUTION PATCHING
+% ============================================================
+\chapter{Edge Attribution Patching (EAP)}
+\label{ch:eap}
+
+\section{Problema que resuelve}
+
+El Activation Patching (incluyendo ACDC) analiza la importancia de activaciones individuales (nodos en el grafo computacional). Sin embargo, en un transformer, la información fluye a través de \emph{aristas} entre componentes: la contribución de una cabeza de atención pasa por una matriz de proyección de valor (OV circuit) antes de escribir en el residual stream. Si queremos encontrar el \emph{circuito mínimo}---el subgrafo más pequeño que mantiene el comportamiento---necesitamos medir la importancia de cada arista, no solo de cada nodo.
+
+El \textbf{Edge Attribution Patching} (EAP)~\cite{syed2023eap} aplica la idea de Attribution Patching a cada arista del grafo computacional, permitiendo identificar y seleccionar las $k$ aristas más importantes para una tarea.
+
+\section{Fundamento matemático}
+
+\subsection{De nodos a aristas}
+
+En el grafo computacional de un transformer, una arista representa el flujo de información entre dos componentes. Por ejemplo:
+
+\begin{itemize}
+    \item Arista \texttt{embeddings} $\to$ \texttt{MLP\_layer\_5}: la contribución de la embedding a la capa FFN~5.
+    \item Arista \texttt{head\_3.1} $\to$ \texttt{MLP\_layer\_8}: la contribución de la cabeza de atención en capa~3, posición~1, a la capa FFN~8.
+\end{itemize}
+
+EAP estima la importancia de cada arista usando la misma aproximación de Taylor que AtP:
+
+\[
+\text{EAP}(e_{i \to j}) = \frac{\partial L}{\partial e_{i \to j}}\bigg|_{\text{clean}} \cdot \big(e_{i \to j}^{(\text{corrupt})} - e_{i \to j}^{(\text{clean})}\big)
+\]
+
+\subsection{El algoritmo EAP}
+
+\begin{algoritmo}[EAP]
+\label{alg:eap}
+\begin{enumerate}
+    \item Ejecutar forward clean y guardar $\mathbf{e}_{\text{clean}}$ (todas las aristas).
+    \item Ejecutar forward corrupt y guardar $\mathbf{e}_{\text{corrupt}}$.
+    \item Ejecutar backward desde la pérdida clean para obtener $\nabla_{\mathbf{e}} L$.
+    \item Calcular $\text{EAP}_i$ para cada arista $i$:
+    \[
+    \text{EAP}_i = \big(\nabla_{\mathbf{e}} L\big)_i \cdot \Delta e_i
+    \]
+    \item Ordenar aristas por $|\text{EAP}_i|$ (importancia).
+    \item Seleccionar las top-$k$ aristas como el circuito candidato.
+\end{enumerate}
+\end{algoritmo}
+
+\subsection{Comparación EAP vs. ACDC}
+
+La ventaja fundamental de EAP sobre ACDC es la eficiencia:
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Métrica} & \textbf{ACDC} & \textbf{EAP} \\
+\midrule
+Pases forward & $\mathcal{O}(N^2)$ & 2 \\
+Pases backward & 0 & 1 \\
+Calidad (AUC en IOI) & 0.868 & 0.904 \\
+Correlación con patching real ($R^2$) & 1.0 & 0.27 \\
+Escalabilidad a modelos grandes & Mala & Excelente \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+EAP obtiene mejor AUC que ACDC porque considera la importancia de cada arista de forma continua (en lugar de la decisión binaria de ACDC), pero su correlación con el patching real es modesta ($R^2 = 0.27$).
+
+\section{Variante: EAP con integradores}
+
+Para mejorar la precisión de EAP, Syed et al.~\cite{syed2023eap} propusieron usar \emph{integradores}: en lugar de una sola pareja clean/corrupt, se usan múltiples parejas y se promedian los scores. Esto reduce la varianza y mejora la correlación con el patching real.
+
+\[
+\text{EAP-IG}(e) = \frac{1}{M} \sum_{m=1}^M \big(\nabla_{\mathbf{e}} L^{(m)}\big)_e \cdot \big(e_{\text{corrupt}}^{(m)} - e_{\text{clean}}^{(m)}\big)_e
+\]
+
+\section{Ejemplo práctico}
+
+Para la tarea IOI en GPT-2 Small, EAP identifica las aristas más importantes:
+
+\begin{center}
+\begin{tabular}{llc}
+\toprule
+\textbf{Arista (origen $\to$ destino)} & \textbf{Función} & \textbf{Score EAP} \\
+\midrule
+emb $\to$ head 10.7 & Detectar nombre duplicado & 0.42 \\
+head 10.7 $\to$ head 11.10 & Suprimir sujeto repetido & 0.38 \\
+head 0.1 $\to$ head 10.7 & Copiar atención previa & 0.31 \\
+head 11.10 $\to$ MLP 11 & Computar predicción final & 0.29 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+El circuito resultante mantiene $>95\%$ del rendimiento original con solo $<1\%$ de las aristas totales.
+
+\section{Limitaciones}
+
+\begin{enumerate}
+    \item \textbf{Baja correlación con el ground truth}: aunque EAP identifica las aristas correctas en el ranking (alto AUC), la magnitud de los scores individuales no se correlaciona bien con el efecto real del patching ($R^2 \approx 0.27$).
+    \item \textbf{Dependencia del input}: los resultados de EAP varían significativamente según la pareja clean/corrupt elegida.
+    \item \textbf{Solo aristas directas}: EAP considera aristas individuales, no interacciones entre aristas ni caminos de largo >1.
+    \item \textbf{Aproximación lineal}: al igual que AtP, la calidad de EAP depende de la linealidad local del modelo.
+    \item \textbf{No hay umbral claro}: la decisión de cuántas aristas mantener (top-$k$) es arbitraria y depende de la tarea.
+\end{enumerate}
+
+\newpage
+
+% ============================================================
+% CAPÍTULO 14 — CONCLUSIONES
+% ============================================================
+\chapter{Conclusiones}
+
+En este informe hemos explorado en detalle doce técnicas fundamentales de Mecanistic Interpretability para modelos de lenguaje basados en transformers. Cada técnica aborda una pregunta específica sobre el funcionamiento interno del modelo:
+
+\begin{enumerate}
+    \item \textbf{Logit Lens} responde: ¿qué token predice el modelo en cada capa intermedia?
+    \item \textbf{Probing} responde: ¿esta información específica está representada en esta capa?
+    \item \textbf{SAE} responde: ¿podemos descomponer las activaciones en features monosemánticas?
+    \item \textbf{Automated Feature Explanation} responde: ¿qué significado tiene cada feature latente?
+    \item \textbf{Mean Ablation} responde: ¿es este componente causalmente importante?
+    \item \textbf{Path Patching} responde: ¿esta ruta específica entre componentes es causal?
+    \item \textbf{Random Ablation} responde: ¿es importante la varianza de este componente?
+    \item \textbf{Causal Scrubbing} responde: ¿es esta hipótesis completa causalmente fiel?
+    \item \textbf{Activation Patching} responde: ¿qué activaciones son causalmente relevantes para esta tarea?
+    \item \textbf{ACDC} responde: ¿podemos descubrir el circuito completo automáticamente?
+    \item \textbf{Attribution Patching} responde: ¿cómo aproximar eficientemente el patching?
+    \item \textbf{Edge Attribution Patching} responde: ¿qué aristas del grafo computacional son importantes?
+\end{enumerate}
+
+\section{Tabla comparativa}
+
+\begin{center}
+\begin{tabular}{lp{3cm}p{2.5cm}p{2.5cm}p{2.5cm}}
+\toprule
+\textbf{Técnica} & \textbf{Tipo} & \textbf{Costo} & \textbf{Cobertura} & \textbf{Precisión causal} \\
+\midrule
+Logit Lens & Correlacional & $\mathcal{O}(1)$ & Global (token) & Ninguna \\
+Probing & Correlacional & $\mathcal{O}(L)$ & Local (feature) & Ninguna \\
+SAE & Descomposición & Muy alto & Local (feature) & Ninguna \\
+Auto. Feature Expl. & Descriptivo & Alto & Local (feature) & Ninguna \\
+Mean Ablation & Intervención & $\mathcal{O}(N)$ & Local (componente) & Moderada \\
+Path Patching & Intervención & $\mathcal{O}(N^2)$ & Local (ruta) & Alta \\
+Random Ablation & Intervención & $\mathcal{O}(N \times M)$ & Local (componente) & Alta \\
+Causal Scrubbing & Verificación & Muy alto & Global (hipótesis) & Muy alta \\
+Activation Patching & Intervención & $\mathcal{O}(L \times C \times T)$ & Local (activación) & Muy alta \\
+ACDC & Descubrimiento & $\mathcal{O}(N^2)$ & Global (circuito) & Alta \\
+Attribution Patching & Aproximación & $\mathcal{O}(1)$ & Global (activaciones) & Moderada \\
+Edge Attribution Patching & Aproximación & $\mathcal{O}(1)$ & Global (aristas) & Moderada \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Recomendaciones prácticas}
+
+Para investigadores que se inician en Mecanistic Interpretability, recomendamos el siguiente flujo de trabajo:
+
+\begin{enumerate}
+    \item \textbf{Exploración inicial}: usar \textbf{Logit Lens} para visualizar la evolución de las predicciones a través de las capas.
+    \item \textbf{Formulación de hipótesis}: usar \textbf{Probing} y \textbf{SAE} para identificar features y componentes que correlacionan con el comportamiento de interés.
+    \item \textbf{Etiquetado}: usar \textbf{Automated Feature Explanation} para caracterizar los features descubiertos.
+    \item \textbf{Localización rápida}: usar \textbf{Attribution Patching} o \textbf{EAP} para identificar rápidamente las activaciones o aristas candidatas.
+    \item \textbf{Confirmación causal}: usar \textbf{Activation Patching} y \textbf{Path Patching} para verificar que los candidatos son causalmente relevantes.
+    \item \textbf{Descubrimiento sistemático}: usar \textbf{ACDC} para encontrar el circuito completo.
+    \item \textbf{Verificación formal}: usar \textbf{Causal Scrubbing} para validar que la hipótesis del circuito es completa y fiel.
+\end{enumerate}
+
+\section{Direcciones futuras}
+
+La Mecanistic Interpretability es un campo en rápida evolución. Algunas direcciones abiertas incluyen:
+
+\begin{itemize}
+    \item \textbf{Escalamiento}: ¿cómo aplicar estas técnicas a modelos con cientos de miles de millones de parámetros?
+    \item \textbf{Automatización}: ¿podemos automatizar completamente el pipeline de descubrimiento de circuitos?
+    \item \textbf{Universalidad}: ¿los circuitos descubiertos en un modelo se transfieren a otros modelos y arquitecturas?
+    \item \textbf{Intervención}: ¿podemos usar el conocimiento de los circuitos para mejorar el rendimiento, la robustez o la seguridad de los modelos?
+    \item \textbf{Integración con entrenamiento}: ¿podemos diseñar arquitecturas y procedimientos de entrenamiento que produzcan modelos inherentemente más interpretables?
+\end{itemize}
+
+Estas preguntas marcan la frontera de la investigación en Mecanistic Interpretability, y las técnicas presentadas en este informe constituyen las herramientas fundamentales para abordarlas.
+
+% ============================================================
+% BIBLIOGRAFÍA
+% ============================================================
+\begin{thebibliography}{99}
+
+\bibitem{vaswani2017attention}
+A.~Vaswani et al., ``Attention is all you need,'' en \emph{Advances in Neural Information Processing Systems}, 2017.
+
+\bibitem{radford2019language}
+A.~Radford et al., ``Language models are unsupervised multitask learners,'' OpenAI Technical Report, 2019.
+
+\bibitem{elhage2021mathematical}
+N.~Elhage et al., ``A mathematical framework for transformer circuits,'' \emph{Transformer Circuits Thread}, 2021.
+
+\bibitem{nostalgebraist2020logitlens}
+Nostalgebraist, ``Interpreting GPT: the logit lens,'' \emph{LessWrong}, 2020. [Online]. Available: \url{https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens}
+
+\bibitem{belrose2023tunedlens}
+N.~Belrose et al., ``Eliciting latent predictions from transformers with the tuned lens,'' \emph{arXiv:2303.08112}, 2023.
+
+\bibitem{alain2016probing}
+G.~Alain y Y.~Bengio, ``Understanding intermediate layers using linear classifier probes,'' en \emph{ICLR Workshop}, 2017.
+
+\bibitem{hewitt2019selectivity}
+J.~Hewitt y P.~Liang, ``Designing and interpreting probes with control tasks,'' en \emph{EMNLP}, 2019.
+
+\bibitem{mikolov2013wordvec}
+T.~Mikolov et al., ``Distributed representations of words and phrases and their compositionality,'' en \emph{NIPS}, 2013.
+
+\bibitem{gurnee2023sparseprobing}
+W.~Gurnee et al., ``Finding neurons in a haystack: case studies with sparse probing,'' \emph{TMLR}, 2023.
+
+\bibitem{bolukbasi2021interpretability}
+T.~Bolukbasi et al., ``Interpretability and dataset artifacts: a cautionary tale,'' en \emph{ACL Workshop}, 2021.
+
+\bibitem{elhage2022superposition}
+N.~Elhage et al., ``Toy models of superposition,'' \emph{Transformer Circuits Thread}, 2022.
+
+\bibitem{bricken2023monosemanticity}
+T.~Bricken et al., ``Towards monosemanticity: decomposing language models with dictionary learning,'' \emph{Transformer Circuits Thread}, 2023.
+
+\bibitem{cunningham2023sae}
+H.~Cunningham et al., ``Sparse autoencoders find highly interpretable features in language models,'' en \emph{ICLR}, 2024.
+
+\bibitem{gao2024topk}
+L.~Gao et al., ``Scaling and evaluating sparse autoencoders,'' \emph{arXiv:2406.04093}, 2024.
+
+\bibitem{templeton2024scalingmono}
+A.~Templeton et al., ``Scaling monosemanticity: extracting interpretable features from Claude 3 Sonnet,'' \emph{Anthropic}, 2024.
+
+\bibitem{makelov2024saeidentity}
+A.~Mäkelov et al., ``A framework for identifying interpretable directions in neural representations,'' en \emph{ICLR}, 2024.
+
+\bibitem{bills2023automatedexplanation}
+S.~Bills et al., ``Language models can explain neurons in language models,'' \emph{OpenAI}, 2023.
+
+\bibitem{wang2022ioi}
+K.~Wang et al., ``Interpretability in the wild: a circuit for indirect object identification in GPT-2 small,'' en \emph{ICLR}, 2023.
+
+\bibitem{goldowsky2023pathpatching}
+N.~Goldowsky-Dill et al., ``Localizing model behavior with path patching,'' \emph{arXiv:2304.05969}, 2023.
+
+\bibitem{redwood2022causalscrubbing}
+Redwood Research, ``Causal scrubbing: a method for rigorously testing interpretability hypotheses,'' \emph{LessWrong}, 2022.
+
+\bibitem{geiger2023causalscrubbing}
+A.~Geiger et al., ``Causal abstraction: a theoretical foundation for mechanistic interpretability,'' \emph{arXiv:2301.04709}, 2023.
+
+\bibitem{meng2022rome}
+K.~Meng et al., ``Locating and editing factual associations in GPT,'' en \emph{NeurIPS}, 2022.
+
+\bibitem{conmy2023acdc}
+A.~Conmy et al., ``Towards automated circuit discovery for mechanistic interpretability,'' en \emph{NeurIPS}, 2023.
+
+\bibitem{nanda2022attributionpatching}
+N.~Nanda, ``Attribution patching: activation patching at industrial scale,'' 2022. [Online]. Available: \url{https://www.neelnanda.io/mechanistic-interpretability/attribution-patching}
+
+\bibitem{syed2023eap}
+A.~Syed et al., ``Attribution patching outperforms automated circuit discovery,'' en \emph{NeurIPS ATTRIB Workshop}, 2023.
+
+\bibitem{kramar2024atpstar}
+J.~Kramár et al., ``AtP*: an efficient and scalable method for localizing LLM behavior to components,'' \emph{arXiv:2403.00745}, 2024.
+
+\end{thebibliography}
+
+\end{document}
